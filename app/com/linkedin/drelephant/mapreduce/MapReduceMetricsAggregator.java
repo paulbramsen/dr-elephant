@@ -21,14 +21,15 @@ import com.linkedin.drelephant.analysis.HadoopMetricsAggregator;
 import com.linkedin.drelephant.analysis.HadoopAggregatedData;
 import com.linkedin.drelephant.configurations.aggregator.AggregatorConfigurationData;
 import com.linkedin.drelephant.mapreduce.data.MapReduceApplicationData;
+import com.linkedin.drelephant.mapreduce.data.MapReduceCounterData;
 import org.apache.log4j.Logger;
 
 
 public class MapReduceMetricsAggregator implements HadoopMetricsAggregator {
 
   private static final Logger logger = Logger.getLogger(MapReduceMetricsAggregator.class);
-  private static final String MAP_CONTAINER_CONFIG = "mapreduce.map.memory.mb";
-  private static final String REDUCER_CONTAINER_CONFIG = "mapreduce.reduce.memory.mb";
+  private static final String MAP_CONTAINER_SIZE = "mapreduce.map.memory.mb";
+  private static final String REDUCER_CONTAINER_SIZE = "mapreduce.reduce.memory.mb";
   private static final String REDUCER_SLOW_START_CONFIG = "mapreduce.job.reduce.slowstart.completedmaps";
 
   private HadoopAggregatedData _hadoopAggregatedData = null;
@@ -69,6 +70,10 @@ public class MapReduceMetricsAggregator implements HadoopMetricsAggregator {
 
     reduceTasks = new TaskLevelAggregatedMetrics(data.getReducerData(), reduceTaskContainerSize, reduceIdealStartTime);
 
+    logger.info(data.getAppId() + " RESOURCE USED   : " + mapTasks.getResourceUsed() + reduceTasks.getResourceUsed());
+    logger.info(data.getAppId() + " DELAY           : " + mapTasks.getDelay() + reduceTasks.getDelay());
+    logger.info(data.getAppId() + " RESOURCE WASTED : " + mapTasks.getResourceWasted() + reduceTasks.getResourceWasted());
+
     _hadoopAggregatedData.setResourceUsed(mapTasks.getResourceUsed() + reduceTasks.getResourceUsed());
     _hadoopAggregatedData.setTotalDelay(mapTasks.getDelay() + reduceTasks.getDelay());
     _hadoopAggregatedData.setResourceWasted(mapTasks.getResourceWasted() + reduceTasks.getResourceWasted());
@@ -80,10 +85,16 @@ public class MapReduceMetricsAggregator implements HadoopMetricsAggregator {
   }
 
   private long getMapContainerSize(HadoopApplicationData data) {
-    return Long.parseLong(data.getConf().getProperty(MAP_CONTAINER_CONFIG));
+    if (data.getConf().getProperty(MAP_CONTAINER_SIZE) == null) {
+      return 0;
+    }
+    return Long.parseLong(data.getConf().getProperty(MAP_CONTAINER_SIZE));
   }
 
   private long getReducerContainerSize(HadoopApplicationData data) {
-    return Long.parseLong(data.getConf().getProperty(REDUCER_CONTAINER_CONFIG));
+    if (data.getConf().getProperty(REDUCER_CONTAINER_SIZE) == null) {
+      return 0;
+    }
+    return Long.parseLong(data.getConf().getProperty(REDUCER_CONTAINER_SIZE));
   }
 }

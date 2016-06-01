@@ -36,6 +36,7 @@ object Dependencies {
     hadoopVersion = System.getProperties.getProperty(HADOOP_VERSION)
   }
 
+
   var sparkVersion = "1.4.0"
   if (System.getProperties.getProperty(SPARK_VERSION) != null) {
     sparkVersion = System.getProperties.getProperty(SPARK_VERSION)
@@ -68,11 +69,13 @@ object Dependencies {
     "org.apache.hadoop" % "hadoop-common" % hadoopVersion % Test,
     "org.apache.hadoop" % "hadoop-hdfs" % hadoopVersion % "compileonly",
     "org.apache.hadoop" % "hadoop-hdfs" % hadoopVersion % Test,
+    "org.apache.hadoop" % "hadoop-mapreduce-client-core" % hadoopVersion % "compileonly",
+    "org.apache.hadoop" % "hadoop-mapreduce-client-core" % hadoopVersion % Test,
     "org.codehaus.jackson" % "jackson-mapper-asl" % jacksonMapperAslVersion,
     "org.jsoup" % "jsoup" % jsoupVersion,
     "org.mockito" % "mockito-core" % "1.10.19",
     "org.jmockit" % "jmockit" % "1.23" % Test
-  ) :+ sparkExclusion 
+  ) :+ sparkExclusion
 
   var dependencies = Seq(javaJdbc, javaEbean, cache)
   dependencies ++= requiredDep

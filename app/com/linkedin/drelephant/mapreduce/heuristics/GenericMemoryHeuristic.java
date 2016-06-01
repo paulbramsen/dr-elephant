@@ -91,7 +91,7 @@ public abstract class GenericMemoryHeuristic implements Heuristic<MapReduceAppli
   @Override
   public HeuristicResult apply(MapReduceApplicationData data) {
 
-    if(!data.getSucceeded()) {
+    if(!data.getStatus().equals(MapReduceApplicationData.Status.SUCCEEDED.name())) {
       return null;
     }
 

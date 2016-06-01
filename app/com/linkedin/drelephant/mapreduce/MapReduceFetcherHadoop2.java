@@ -30,16 +30,15 @@ import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Properties;
-import java.util.Random;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.mapred.JobConf;
+import org.apache.hadoop.mapred.TIPStatus;
+import org.apache.hadoop.mapreduce.*;
 import org.apache.hadoop.security.authentication.client.AuthenticatedURL;
 import org.apache.hadoop.security.authentication.client.AuthenticationException;
 import org.apache.log4j.Logger;
@@ -75,15 +74,31 @@ public class MapReduceFetcherHadoop2 implements ElephantFetcher<MapReduceApplica
   }
 
   @Override
-  public MapReduceApplicationData fetchData(AnalyticJob analyticJob) throws IOException, AuthenticationException {
+  public MapReduceApplicationData fetchData(AnalyticJob analyticJob)
+      throws IOException, AuthenticationException, InterruptedException {
     String appId = analyticJob.getAppId();
-    MapReduceApplicationData jobData = new MapReduceApplicationData();
     String jobId = Utils.getJobIdFromApplicationId(appId);
-    jobData.setAppId(appId).setJobId(jobId);
-    // Change job tracking url to job history page
+    MapReduceApplicationData jobData;
     analyticJob.setTrackingUrl(_jhistoryWebAddr + jobId);
-    try {
 
+    if (analyticJob.getJobStatus().equals("SUCCEEDED") || analyticJob.getJobStatus().equals("FAILED")) {
+      jobData = fetchCompletedJobsData(analyticJob);
+    } else if (analyticJob.getJobStatus().equals("RUNNING")) {
+      jobData = fetchRunningJobsData(analyticJob);
+    } else {
+      // Dr. Elephant doesn't support states other than SUCCEEDED, FAILED and UNDEFINED. Code shouldn't reach here.
+      throw new RuntimeException(appId + " is in " + analyticJob.getJobStatus() + " state which is not supported.");
+    }
+
+    jobData.setAppId(appId).setJobId(jobId);
+    return jobData;
+  }
+
+  private MapReduceApplicationData fetchCompletedJobsData(AnalyticJob analyticJob)
+      throws IOException, AuthenticationException {
+    MapReduceApplicationData jobData = new MapReduceApplicationData();
+    String jobId = Utils.getJobIdFromApplicationId(analyticJob.getAppId());
+    try {
       // Fetch job config
       Properties jobConf = _jsonFactory.getProperties(_urlFactory.getJobConfigURL(jobId));
       jobData.setJobConf(jobConf);
@@ -96,8 +111,7 @@ public class MapReduceFetcherHadoop2 implements ElephantFetcher<MapReduceApplica
       jobData.setFinishTime(_jsonFactory.getFinishTime(jobURL));
 
       if (state.equals("SUCCEEDED")) {
-
-        jobData.setSucceeded(true);
+        jobData.setStatus(JobStatus.State.SUCCEEDED.name());
 
         // Fetch job counter
         MapReduceCounterData jobCounter = _jsonFactory.getJobCounter(_urlFactory.getJobCounterURL(jobId));
@@ -113,8 +127,8 @@ public class MapReduceFetcherHadoop2 implements ElephantFetcher<MapReduceApplica
 
         jobData.setCounters(jobCounter).setMapperData(mapperData).setReducerData(reducerData);
       } else if (state.equals("FAILED")) {
+        jobData.setStatus(JobStatus.State.FAILED.name());
 
-        jobData.setSucceeded(false);
         String diagnosticInfo;
         try {
           diagnosticInfo = parseException(jobData.getJobId(),  _jsonFactory.getDiagnosticInfo(jobURL));
@@ -122,13 +136,138 @@ public class MapReduceFetcherHadoop2 implements ElephantFetcher<MapReduceApplica
           diagnosticInfo = null;
         }
         jobData.setDiagnosticInfo(diagnosticInfo);
-      } else {
-        // Should not reach here
-        throw new RuntimeException("Job state not supported. Should be either SUCCEEDED or FAILED");
       }
     } finally {
       ThreadContextMR2.updateAuthToken();
     }
+    return jobData;
+  }
+
+  private MapReduceApplicationData fetchRunningJobsData(AnalyticJob analyticJob)
+      throws IOException, AuthenticationException, InterruptedException {
+    MapReduceApplicationData jobData = new MapReduceApplicationData();
+    String appId = analyticJob.getAppId();
+    String jobId = Utils.getJobIdFromApplicationId(appId);
+    jobData.setStatus(JobStatus.State.RUNNING.name());
+
+    // When job is in Running state, check for all the completed tasks and compute the metrics.
+    logger.info("JOB is in " + analyticJob.getJobStatus() + " state: " + appId);
+
+    Cluster cluster = new Cluster(new Configuration());
+    Job job = cluster.getJob(JobID.forName(jobId));
+    if (job == null) {
+      logger.error("App " + appId + " not found. This should not happen. Please debug this issue.");
+      return null;
+    }
+
+    TaskReport[] mapTaskReports = job.getTaskReports(TaskType.MAP);
+    TaskReport[] redTaskReports = job.getTaskReports(TaskType.REDUCE);
+
+    // Fetch task data
+    List<MapReduceTaskData> mapperList = new ArrayList<MapReduceTaskData>();
+    List<MapReduceTaskData> reducerList = new ArrayList<MapReduceTaskData>();
+
+    for (int j = 0; j < mapTaskReports.length; j++) {
+      if (mapTaskReports[j].getCurrentStatus() == TIPStatus.COMPLETE) {
+        //logger.info("Map Task is in state: " + mapTaskReports[j].getCurrentStatus().name());
+        MapReduceTaskData mrTaskData = new MapReduceTaskData(mapTaskReports[j].getTaskId(),
+            mapTaskReports[j].getSuccessfulTaskAttemptId().toString());
+        mrTaskData.setTime(new long[]{0, 0, 0, mapTaskReports[j].getStartTime(), mapTaskReports[j].getFinishTime()});
+
+        Counters taskCounters = mapTaskReports[j].getTaskCounters();
+        MapReduceCounterData taskCounter = new MapReduceCounterData();
+        Iterator<CounterGroup> counterGroups = taskCounters.iterator();
+        while (counterGroups.hasNext()) {
+          CounterGroup counterGroup = counterGroups.next();
+          Iterator<Counter> counters = counterGroup.iterator();
+          while (counters.hasNext()) {
+            Counter counter = counters.next();
+            taskCounter.set(counterGroup.getName(), counter.getName(), counter.getValue());
+          }
+        }
+        mrTaskData.setCounter(taskCounter);
+
+        long taskExecTime = mrTaskData.getTotalRunTimeMs();
+        mrTaskData.setTime(new long[]{taskExecTime, mrTaskData.getShuffleTimeMs(), mrTaskData.getSortTimeMs(), mrTaskData
+                .getStartTimeMs(), mrTaskData.getFinishTimeMs()});
+        mapperList.add(mrTaskData);
+      } else {
+        // Ignore Map tasks which are still running
+      }
+    }
+
+    for (int j = 0; j < redTaskReports.length; j++) {
+      if (redTaskReports[j].getCurrentStatus() == TIPStatus.COMPLETE) {
+        //logger.info("Red Task is in state: " + redTaskReports[j].getCurrentStatus().name());
+
+        MapReduceTaskData mrTaskData = new MapReduceTaskData(redTaskReports[j].getTaskId(),
+            redTaskReports[j].getSuccessfulTaskAttemptId().toString());
+        mrTaskData.setTime(new long[]{0, 0, 0, redTaskReports[j].getStartTime(), redTaskReports[j].getFinishTime()});
+
+        Counters taskCounters = redTaskReports[j].getTaskCounters();
+        MapReduceCounterData taskCounter = new MapReduceCounterData();
+        Iterator<CounterGroup> counterGroups = taskCounters.iterator();
+        while (counterGroups.hasNext()) {
+          CounterGroup counterGroup = counterGroups.next();
+          Iterator<Counter> counters = counterGroup.iterator();
+          while (counters.hasNext()) {
+            Counter counter = counters.next();
+            taskCounter.set(counterGroup.getName(), counter.getName(), counter.getValue());
+          }
+        }
+        mrTaskData.setCounter(taskCounter);
+
+        long taskExecTime = mrTaskData.getTotalRunTimeMs();
+        mrTaskData.setTime(new long[]{taskExecTime, mrTaskData.getShuffleTimeMs(), mrTaskData.getSortTimeMs(), mrTaskData
+                .getStartTimeMs(), mrTaskData.getFinishTimeMs()});
+        reducerList.add(mrTaskData);
+      } else {
+        // Ignore Reduce tasks which are still running
+      }
+    }
+
+    // TODO-3
+/*    int sampleSize = mapTaskReports.length;
+    // check if sampling is enabled
+    if(Boolean.parseBoolean(_fetcherConfigurationData.getParamMap().get(SAMPLING_ENABLED))) {
+      if (sampleSize > MAX_SAMPLE_SIZE) {
+        logger.info(jobId + " needs sampling.");
+        Collections.shuffle(mapperList);
+      }
+      sampleSize = Math.min(sampleSize, MAX_SAMPLE_SIZE);
+    }*/
+
+    // Capture the job configuration
+    Properties props = new Properties();
+    Iterator<Map.Entry<String, String>> entries = job.getConfiguration().iterator();
+    while (entries.hasNext()) {
+      Map.Entry<String, String> entry = entries.next();
+      String key = entry.getKey();
+      String value = entry.getValue();
+      props.setProperty(key, value);
+    }
+    jobData.setJobConf(props);
+
+    // Capture the job counters
+    MapReduceCounterData mpCounter = new MapReduceCounterData();
+    Iterator<CounterGroup> counterGroups = job.getCounters().iterator();
+    while (counterGroups.hasNext()) {
+      CounterGroup counterGroup = counterGroups.next();
+      Iterator<Counter> counters = counterGroup.iterator();
+      while (counters.hasNext()) {
+        Counter counter = counters.next();
+        mpCounter.set(counterGroup.getName(), counter.getName(), counter.getValue());
+      }
+    }
+    jobData.setCounters(mpCounter);
+
+    MapReduceTaskData[] mapperData = mapperList.toArray(new MapReduceTaskData[mapperList.size()]);
+    MapReduceTaskData[] reducerData = reducerList.toArray(new MapReduceTaskData[reducerList.size()]);
+    jobData.setMapperData(mapperData).setReducerData(reducerData);
+
+    jobData.setSubmitTime(job.getStartTime()); // TODO: What is submit time and start time.
+    jobData.setStartTime(job.getStartTime());
+    jobData.setFinishTime(System.currentTimeMillis());
 
     return jobData;
   }

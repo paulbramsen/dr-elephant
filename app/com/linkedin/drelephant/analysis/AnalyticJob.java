@@ -21,17 +21,20 @@ import com.linkedin.drelephant.util.InfoExtractor;
 import com.linkedin.drelephant.util.Utils;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Delayed;
+import java.util.concurrent.TimeUnit;
 import models.AppHeuristicResult;
 import models.AppHeuristicResultDetails;
 import models.AppResult;
 import org.apache.log4j.Logger;
+import org.apache.hadoop.metrics.MetricsContext;
 
 
 /**
  * This class wraps some basic meta data of a completed application run (notice that the information is generally the
  * same regardless of hadoop versions and application types), and then promises to return the analyzed result later.
  */
-public class AnalyticJob {
+public class AnalyticJob implements Delayed {
   private static final Logger logger = Logger.getLogger(AnalyticJob.class);
 
   private static final String UNKNOWN_JOB_TYPE = "Unknown";   // The default job type when the data matches nothing.
@@ -44,8 +47,25 @@ public class AnalyticJob {
   private String _queueName;
   private String _user;
   private String _trackingUrl;
+  private String _finalStatus;
+  private String _jobStatus;
   private long _startTime;
   private long _finishTime;
+  private long _severity;
+  private long _expiryTime;
+
+  public String getJobStatus() {
+    return _jobStatus;
+  }
+
+  public AnalyticJob setJobStatus(String jobStatus) {
+    _jobStatus = jobStatus;
+    return this;
+  }
+
+  public void updateExpiryTime(long expiry) {
+    _expiryTime = System.currentTimeMillis() + expiry;
+  }
 
   /**
    * Returns the application type
@@ -144,6 +164,16 @@ public class AnalyticJob {
   }
 
   /**
+   * Sets the severity of the job.
+   *
+   * @return The analytic job
+   */
+  public AnalyticJob setSeverity(long severity) {
+    _severity = severity;
+    return this;
+  }
+
+  /**
    * Returns the application id
    *
    * @return The analytic job
@@ -189,6 +219,15 @@ public class AnalyticJob {
   }
 
   /**
+   * Returns the current severity of the job.
+   *
+   * @return The severity
+   */
+  public long getSeverity() {
+    return _severity;
+  }
+
+  /**
    * Returns the tracking url of the job
    *
    * @return The tracking url in resource manager
@@ -218,6 +257,25 @@ public class AnalyticJob {
   }
 
   /**
+   * Updates the finalStatus of the job
+   *
+   * @param finalStatus The final status of the job
+   */
+  public AnalyticJob setFinalStatus(String finalStatus) {
+    _finalStatus = finalStatus;
+    return this;
+  }
+
+  /**
+   * Sets the tracking url for the job
+   *
+   * @return The final status of the job
+   */
+  public String getFinalStatus() {
+    return _finalStatus;
+  }
+
+  /**
    * Returns the analysed AppResult that could be directly serialized into DB.
    *
    * This method fetches the data using the appropriate application fetcher, runs all the heuristics on them and
@@ -226,7 +284,7 @@ public class AnalyticJob {
    * @throws Exception if the analysis process encountered a problem.
    * @return the analysed AppResult
    */
-  public AppResult getAnalysis() throws Exception {
+  public AppResult  getAnalysis() throws Exception {
     ElephantFetcher fetcher = ElephantContext.instance().getFetcherForApplicationType(getAppType());
     HadoopApplicationData data = fetcher.fetchData(this);
 
@@ -245,6 +303,10 @@ public class AnalyticJob {
         }
       }
     }
+
+    // Update Analytic Job
+    this.setFinishTime(data.getFinishTime());
+    this.setJobStatus(data.getStatus());
 
     JobType jobType = ElephantContext.instance().matchJobType(data);
     String jobTypeName = jobType == null ? UNKNOWN_JOB_TYPE : jobType.getName();
@@ -266,11 +328,12 @@ public class AnalyticJob {
     result.resourceUsed = hadoopAggregatedData.getResourceUsed();
     result.totalDelay = hadoopAggregatedData.getTotalDelay();
     result.resourceWasted = hadoopAggregatedData.getResourceWasted();
+    result.status = Utils.truncateField(getJobStatus(), AppResult.STATUS_LIMIT, getAppId());
 
     // Load App Heuristic information
     int jobScore = 0;
     result.yarnAppHeuristicResults = new ArrayList<AppHeuristicResult>();
-    Severity worstSeverity = Severity.NONE;
+    Severity worstSeverity = Severity.UNDEFINED;
     for (HeuristicResult heuristicResult : analysisResults) {
       AppHeuristicResult detail = new AppHeuristicResult();
       detail.heuristicClass = Utils.truncateField(heuristicResult.getHeuristicClassName(),
@@ -314,5 +377,22 @@ public class AnalyticJob {
    */
   public boolean retry() {
     return (_retries++) < _RETRY_LIMIT;
+  }
+
+  @Override
+  public long getDelay(TimeUnit unit) {
+    long diff = _expiryTime - System.currentTimeMillis();
+    return unit.convert(diff, TimeUnit.MILLISECONDS);
+  }
+
+  @Override
+  public int compareTo(Delayed o) {
+    if (this._expiryTime < ((AnalyticJob) o)._expiryTime) {
+      return -1;
+    }
+    if (this._expiryTime > ((AnalyticJob) o)._expiryTime) {
+      return 1;
+    }
+    return 0;
   }
 }

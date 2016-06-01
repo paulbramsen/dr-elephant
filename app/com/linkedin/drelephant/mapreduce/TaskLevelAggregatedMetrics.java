@@ -118,7 +118,7 @@ public class TaskLevelAggregatedMetrics {
       long memoryRequiredForVM = (long) (taskVM/CLUSTER_MEMORY_FACTOR);
       long biggerMemoryRequirement = memoryRequiredForVM > taskMemory ? memoryRequiredForVM : taskMemory;
       peakMemoryNeed = biggerMemoryRequirement > peakMemoryNeed ? biggerMemoryRequirement : peakMemoryNeed;
-
+      
       if(taskFinishTimeMax < taskData.getFinishTimeMs()) {
         taskFinishTimeMax = taskData.getFinishTimeMs();
       }
@@ -139,6 +139,7 @@ public class TaskLevelAggregatedMetrics {
 
     // wastedResources
     long wastedMemory = containerSize -  (long) (peakMemoryNeed * MEMORY_BUFFER); // give a 50% buffer
+
     if(wastedMemory > 0) {
       for (long duration : durations) {
         _resourceWasted += (wastedMemory) * (duration / Statistics.SECOND_IN_MS); // MB Seconds

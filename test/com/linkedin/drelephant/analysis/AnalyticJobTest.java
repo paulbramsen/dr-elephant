@@ -93,9 +93,10 @@ public class AnalyticJobTest {
 
       // Setup application data
       final MapReduceApplicationData data = new MapReduceApplicationData().setCounters(jobCounter).
-          setMapperData(mappers).setReducerData(reducers).setJobConf(jobConf).setSucceeded(true).
-          setDiagnosticInfo("").setUsername(TEST_USERNAME).setUrl("").setJobName(TEST_JOB_NAME).
-          setStartTime(1462178412).setFinishTime(1462178403).setRetry(false).setAppId(TEST_JOB_ID1);
+          setMapperData(mappers).setReducerData(reducers).setJobConf(jobConf)
+          .setStatus(MapReduceApplicationData.Status.SUCCEEDED.name()).setDiagnosticInfo("").setUsername(TEST_USERNAME)
+          .setUrl("").setJobName(TEST_JOB_NAME).setStartTime(1462178412).setFinishTime(1462178403).setRetry(false)
+          .setAppId(TEST_JOB_ID1);
 
       // Setup heuristics
       final List<Heuristic> heuristics = loadHeuristics();

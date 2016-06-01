@@ -25,8 +25,12 @@ import java.io.IOException;
 public class DrElephant extends Thread {
   private ElephantRunner _elephant;
 
+  private static final int COMPLETED_JOB_POOL_SIZE = 1;    // The number of executor threads to analyse completed jobs
+  // TODO: Find optimal number of running threads
+  private static final int RUNNING_JOB_POOL_SIZE = 1;      // The number of executor threads to analyse running jobs
+
   public DrElephant() throws IOException {
-    _elephant = new ElephantRunner();
+    _elephant = new ElephantRunner(COMPLETED_JOB_POOL_SIZE, RUNNING_JOB_POOL_SIZE);
   }
 
   @Override
