@@ -73,8 +73,8 @@ public class AnalyticJobGeneratorHadoop2 implements AnalyticJobGenerator {
         List<String> ids = Arrays.asList(resourceManagers.split(","));
         _currentTime = System.currentTimeMillis();
         updateAuthToken();
-        try {
-          for (String id : ids) {
+        for (String id : ids) {
+          try {
             String resourceManager = configuration.get(RESOURCE_MANAGER_ADDRESS + "." + id);
             String resourceManagerURL = String.format(RM_NODE_STATE_URL, resourceManager);
             logger.info("Checking RM URL: " + resourceManagerURL);
@@ -84,17 +84,14 @@ public class AnalyticJobGeneratorHadoop2 implements AnalyticJobGenerator {
               logger.info(resourceManager + " is ACTIVE");
               _resourceManagerAddress = resourceManager;
               break;
-            }
-            else {
+            } else {
               logger.info(resourceManager + " is STANDBY");
             }
+          } catch (AuthenticationException e) {
+            logger.info("Error fetching resource manager " + id + " state " + e.getMessage());
+          } catch (IOException e) {
+            logger.info("Error fetching Json for resource manager "+ id + " status " + e.getMessage());
           }
-        }
-        catch (AuthenticationException e) {
-          logger.error("Error fetching resource manager state " + e.getMessage());
-        }
-        catch (IOException e) {
-          logger.error("Error fetching Json for resource manager status " + e.getMessage());
         }
       }
     } else {
