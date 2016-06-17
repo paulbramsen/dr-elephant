@@ -237,7 +237,11 @@ class SparkFSFetcher(fetcherConfData: FetcherConfigurationData) extends Elephant
               null
             }
           } else {
-            val logFilePath = new Path(logPath + "_1.snappy")
+            var sparkLogExt = fetcherConfData.getParamMap.get(SPARK_LOG_EXT)
+            if (sparkLogExt == null) {
+              sparkLogExt = defSparkLogExt
+            }
+            val logFilePath = new Path(logPath + sparkLogExt)
             if (!shouldThrottle(logFilePath)) {
               EventLoggingListener.openEventLog(logFilePath, fs)
             } else {
@@ -338,6 +342,7 @@ private object SparkFSFetcher {
 
   var defEventLogDir = "/system/spark-history"
   var defEventLogSizeInMb = 100d; // 100MB
+  var defSparkLogExt = "_1.snappy"
 
   val LOG_SIZE_XML_FIELD = "event_log_size_limit_in_mb"
   val LOG_DIR_XML_FIELD = "event_log_dir"
@@ -347,4 +352,5 @@ private object SparkFSFetcher {
   val COMPRESSION_CODEC_PREFIX = EventLoggingListener.COMPRESSION_CODEC_KEY + "_"
 
   val NAMENODE_ADDRESSES = "namenode_addresses"
+  val SPARK_LOG_EXT = "spark_log_ext"
 }
