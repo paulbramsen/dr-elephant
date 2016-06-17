@@ -118,7 +118,7 @@ public class TaskLevelAggregatedMetrics {
       long memoryRequiredForVM = (long) (taskVM/CLUSTER_MEMORY_FACTOR);
       long biggerMemoryRequirement = memoryRequiredForVM > taskMemory ? memoryRequiredForVM : taskMemory;
       peakMemoryNeed = biggerMemoryRequirement > peakMemoryNeed ? biggerMemoryRequirement : peakMemoryNeed;
-      
+
       if(taskFinishTimeMax < taskData.getFinishTimeMs()) {
         taskFinishTimeMax = taskData.getFinishTimeMs();
       }

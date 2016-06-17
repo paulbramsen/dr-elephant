@@ -33,6 +33,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.linkedin.drelephant.analysis.Severity;
 import com.linkedin.drelephant.util.Utils;
 
+import javax.persistence.Version;
 import play.db.ebean.Model;
 
 

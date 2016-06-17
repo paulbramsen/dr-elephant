@@ -54,17 +54,21 @@ public class AnalyticJob implements Delayed {
   private long _severity;
   private long _expiryTime;
 
-  public String getJobStatus() {
-    return _jobStatus;
-  }
-
   public AnalyticJob setJobStatus(String jobStatus) {
     _jobStatus = jobStatus;
     return this;
   }
 
+  public String getJobStatus() {
+    return _jobStatus;
+  }
+
   public void updateExpiryTime(long expiry) {
     _expiryTime = System.currentTimeMillis() + expiry;
+  }
+
+  public long getExpiryTime() {
+    return _expiryTime;
   }
 
   /**
@@ -267,15 +271,6 @@ public class AnalyticJob implements Delayed {
   }
 
   /**
-   * Sets the tracking url for the job
-   *
-   * @return The final status of the job
-   */
-  public String getFinalStatus() {
-    return _finalStatus;
-  }
-
-  /**
    * Returns the analysed AppResult that could be directly serialized into DB.
    *
    * This method fetches the data using the appropriate application fetcher, runs all the heuristics on them and
@@ -377,6 +372,10 @@ public class AnalyticJob implements Delayed {
    */
   public boolean retry() {
     return (_retries++) < _RETRY_LIMIT;
+  }
+
+  public int getRetries() {
+    return _retries;
   }
 
   @Override

@@ -59,6 +59,7 @@ public class MapReduceFetcherHadoop2 implements ElephantFetcher<MapReduceApplica
   private JSONFactory _jsonFactory;
   private String _jhistoryWebAddr;
   private FetcherConfigurationData _fetcherConfigurationData;
+  private Cluster _cluster;
 
   public MapReduceFetcherHadoop2(FetcherConfigurationData fetcherConfData) throws IOException {
     this._fetcherConfigurationData = fetcherConfData;
@@ -71,6 +72,8 @@ public class MapReduceFetcherHadoop2 implements ElephantFetcher<MapReduceApplica
 
     _jsonFactory = new JSONFactory();
     _jhistoryWebAddr = "http://" + jhistoryAddr + "/jobhistory/job/";
+
+    _cluster = new Cluster(new Configuration());
   }
 
   @Override
@@ -151,91 +154,23 @@ public class MapReduceFetcherHadoop2 implements ElephantFetcher<MapReduceApplica
     jobData.setStatus(JobStatus.State.RUNNING.name());
 
     // When job is in Running state, check for all the completed tasks and compute the metrics.
-    logger.info("JOB is in " + analyticJob.getJobStatus() + " state: " + appId);
+    logger.info("Job is in " + analyticJob.getJobStatus() + " state: " + appId);
 
-    Cluster cluster = new Cluster(new Configuration());
-    Job job = cluster.getJob(JobID.forName(jobId));
+    Job job = _cluster.getJob(JobID.forName(jobId));
     if (job == null) {
       logger.error("App " + appId + " not found. This should not happen. Please debug this issue.");
       return null;
     }
 
-    TaskReport[] mapTaskReports = job.getTaskReports(TaskType.MAP);
-    TaskReport[] redTaskReports = job.getTaskReports(TaskType.REDUCE);
+    List<TaskReport> mapTaskReportList = Arrays.asList(job.getTaskReports(TaskType.MAP));
+    List<TaskReport> redTaskReportList = Arrays.asList(job.getTaskReports(TaskType.REDUCE));
+
+    int mapSampleSize = getSampled(mapTaskReportList);
+    int redSampleSize = getSampled(redTaskReportList);
 
     // Fetch task data
-    List<MapReduceTaskData> mapperList = new ArrayList<MapReduceTaskData>();
-    List<MapReduceTaskData> reducerList = new ArrayList<MapReduceTaskData>();
-
-    for (int j = 0; j < mapTaskReports.length; j++) {
-      if (mapTaskReports[j].getCurrentStatus() == TIPStatus.COMPLETE) {
-        //logger.info("Map Task is in state: " + mapTaskReports[j].getCurrentStatus().name());
-        MapReduceTaskData mrTaskData = new MapReduceTaskData(mapTaskReports[j].getTaskId(),
-            mapTaskReports[j].getSuccessfulTaskAttemptId().toString());
-        mrTaskData.setTime(new long[]{0, 0, 0, mapTaskReports[j].getStartTime(), mapTaskReports[j].getFinishTime()});
-
-        Counters taskCounters = mapTaskReports[j].getTaskCounters();
-        MapReduceCounterData taskCounter = new MapReduceCounterData();
-        Iterator<CounterGroup> counterGroups = taskCounters.iterator();
-        while (counterGroups.hasNext()) {
-          CounterGroup counterGroup = counterGroups.next();
-          Iterator<Counter> counters = counterGroup.iterator();
-          while (counters.hasNext()) {
-            Counter counter = counters.next();
-            taskCounter.set(counterGroup.getName(), counter.getName(), counter.getValue());
-          }
-        }
-        mrTaskData.setCounter(taskCounter);
-
-        long taskExecTime = mrTaskData.getTotalRunTimeMs();
-        mrTaskData.setTime(new long[]{taskExecTime, mrTaskData.getShuffleTimeMs(), mrTaskData.getSortTimeMs(), mrTaskData
-                .getStartTimeMs(), mrTaskData.getFinishTimeMs()});
-        mapperList.add(mrTaskData);
-      } else {
-        // Ignore Map tasks which are still running
-      }
-    }
-
-    for (int j = 0; j < redTaskReports.length; j++) {
-      if (redTaskReports[j].getCurrentStatus() == TIPStatus.COMPLETE) {
-        //logger.info("Red Task is in state: " + redTaskReports[j].getCurrentStatus().name());
-
-        MapReduceTaskData mrTaskData = new MapReduceTaskData(redTaskReports[j].getTaskId(),
-            redTaskReports[j].getSuccessfulTaskAttemptId().toString());
-        mrTaskData.setTime(new long[]{0, 0, 0, redTaskReports[j].getStartTime(), redTaskReports[j].getFinishTime()});
-
-        Counters taskCounters = redTaskReports[j].getTaskCounters();
-        MapReduceCounterData taskCounter = new MapReduceCounterData();
-        Iterator<CounterGroup> counterGroups = taskCounters.iterator();
-        while (counterGroups.hasNext()) {
-          CounterGroup counterGroup = counterGroups.next();
-          Iterator<Counter> counters = counterGroup.iterator();
-          while (counters.hasNext()) {
-            Counter counter = counters.next();
-            taskCounter.set(counterGroup.getName(), counter.getName(), counter.getValue());
-          }
-        }
-        mrTaskData.setCounter(taskCounter);
-
-        long taskExecTime = mrTaskData.getTotalRunTimeMs();
-        mrTaskData.setTime(new long[]{taskExecTime, mrTaskData.getShuffleTimeMs(), mrTaskData.getSortTimeMs(), mrTaskData
-                .getStartTimeMs(), mrTaskData.getFinishTimeMs()});
-        reducerList.add(mrTaskData);
-      } else {
-        // Ignore Reduce tasks which are still running
-      }
-    }
-
-    // TODO-3
-/*    int sampleSize = mapTaskReports.length;
-    // check if sampling is enabled
-    if(Boolean.parseBoolean(_fetcherConfigurationData.getParamMap().get(SAMPLING_ENABLED))) {
-      if (sampleSize > MAX_SAMPLE_SIZE) {
-        logger.info(jobId + " needs sampling.");
-        Collections.shuffle(mapperList);
-      }
-      sampleSize = Math.min(sampleSize, MAX_SAMPLE_SIZE);
-    }*/
+    List<MapReduceTaskData> mapperList = getMRTaskData(mapTaskReportList, mapSampleSize);
+    List<MapReduceTaskData> reducerList = getMRTaskData(redTaskReportList, redSampleSize);
 
     // Capture the job configuration
     Properties props = new Properties();
@@ -265,11 +200,57 @@ public class MapReduceFetcherHadoop2 implements ElephantFetcher<MapReduceApplica
     MapReduceTaskData[] reducerData = reducerList.toArray(new MapReduceTaskData[reducerList.size()]);
     jobData.setMapperData(mapperData).setReducerData(reducerData);
 
-    jobData.setSubmitTime(job.getStartTime()); // TODO: What is submit time and start time.
+    jobData.setSubmitTime(job.getStartTime());
     jobData.setStartTime(job.getStartTime());
     jobData.setFinishTime(System.currentTimeMillis());
 
     return jobData;
+  }
+
+  private List<MapReduceTaskData> getMRTaskData(List<TaskReport> taskReports, int sampleSize) {
+    List<MapReduceTaskData> taskList = new ArrayList<MapReduceTaskData>();
+    for (int i = 0; i < sampleSize; i++) {
+      TaskReport taskReport = taskReports.get(i);
+      if (taskReport.getCurrentStatus() == TIPStatus.COMPLETE) {
+        MapReduceTaskData mrTaskData = new MapReduceTaskData(taskReport.getTaskId(),
+            taskReport.getSuccessfulTaskAttemptId().toString());
+        mrTaskData.setTime(new long[]{0, 0, 0, taskReport.getStartTime(), taskReport.getFinishTime()});
+
+        Counters taskCounters = taskReport.getTaskCounters();
+        MapReduceCounterData taskCounter = new MapReduceCounterData();
+        Iterator<CounterGroup> counterGroups = taskCounters.iterator();
+        while (counterGroups.hasNext()) {
+          CounterGroup counterGroup = counterGroups.next();
+          Iterator<Counter> counters = counterGroup.iterator();
+          while (counters.hasNext()) {
+            Counter counter = counters.next();
+            taskCounter.set(counterGroup.getName(), counter.getName(), counter.getValue());
+          }
+        }
+        mrTaskData.setCounter(taskCounter);
+
+        long taskExecTime = mrTaskData.getTotalRunTimeMs();
+        mrTaskData.setTime(new long[]{taskExecTime, mrTaskData.getShuffleTimeMs(), mrTaskData.getSortTimeMs(), mrTaskData
+            .getStartTimeMs(), mrTaskData.getFinishTimeMs()});
+        taskList.add(mrTaskData);
+      } else {
+        // Ignore Map/Reduce tasks which are still running
+      }
+    }
+    return taskList;
+  }
+
+  private int getSampled(List<TaskReport> taskReportList) {
+    int sampleSize = taskReportList.size();
+
+    // check if sampling is enabled
+    if(Boolean.parseBoolean(_fetcherConfigurationData.getParamMap().get(SAMPLING_ENABLED))) {
+      if (sampleSize > MAX_SAMPLE_SIZE) {
+        Collections.shuffle(taskReportList);
+      }
+      sampleSize = Math.min(sampleSize, MAX_SAMPLE_SIZE);
+    }
+    return sampleSize;
   }
 
   private String parseException(String jobId, String diagnosticInfo) throws MalformedURLException, IOException,
@@ -547,7 +528,7 @@ final class ThreadContextMR2 {
           _LOCAL_UPDATE_INTERVAL.set(Statistics.MINUTE_IN_MS * 30 + new Random().nextLong()
               % (3 * Statistics.MINUTE_IN_MS));
           logger.info("Executor " + _LOCAL_THREAD_ID.get() + " update interval " + _LOCAL_UPDATE_INTERVAL.get() * 1.0
-              / Statistics.MINUTE_IN_MS);
+              / Statistics.MINUTE_IN_MS + " seconds");
           return new AuthenticatedURL.Token();
         }
       };

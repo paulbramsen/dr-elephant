@@ -70,10 +70,6 @@ public class MapReduceMetricsAggregator implements HadoopMetricsAggregator {
 
     reduceTasks = new TaskLevelAggregatedMetrics(data.getReducerData(), reduceTaskContainerSize, reduceIdealStartTime);
 
-    logger.info(data.getAppId() + " RESOURCE USED   : " + mapTasks.getResourceUsed() + reduceTasks.getResourceUsed());
-    logger.info(data.getAppId() + " DELAY           : " + mapTasks.getDelay() + reduceTasks.getDelay());
-    logger.info(data.getAppId() + " RESOURCE WASTED : " + mapTasks.getResourceWasted() + reduceTasks.getResourceWasted());
-
     _hadoopAggregatedData.setResourceUsed(mapTasks.getResourceUsed() + reduceTasks.getResourceUsed());
     _hadoopAggregatedData.setTotalDelay(mapTasks.getDelay() + reduceTasks.getDelay());
     _hadoopAggregatedData.setResourceWasted(mapTasks.getResourceWasted() + reduceTasks.getResourceWasted());

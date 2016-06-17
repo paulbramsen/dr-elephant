@@ -127,7 +127,7 @@ public class AnalyticJobGeneratorHadoop2 implements AnalyticJobGenerator {
   public List<AnalyticJob> fetchCompletedAnalyticJobs(long from, long to)
       throws IOException, AuthenticationException {
     List<AnalyticJob> appList = new ArrayList<AnalyticJob>();
-    logger.info("Fetching recent completed application runs between last time: " + from + ", and current time: " + to);
+    logger.info("Fetching all the completed applications");
 
     // Fetch all succeeded apps
     URL succeededAppsURL = new URL(new URL("http://" + _resourceManagerAddress), String.format(
@@ -147,6 +147,7 @@ public class AnalyticJobGeneratorHadoop2 implements AnalyticJobGenerator {
     List<AnalyticJob> failedApps = filterDuplicates(failList, from);
     appList.addAll(failedApps);
 
+    logger.info("Fetched " + appList.size() + " completed applications.");
     return appList;
   }
 
@@ -161,9 +162,7 @@ public class AnalyticJobGeneratorHadoop2 implements AnalyticJobGenerator {
   public List<AnalyticJob> fetchUndefinedAnalyticJobs(long from, long to)
       throws IOException, AuthenticationException {
     List<AnalyticJob> appList = new ArrayList<AnalyticJob>();
-    updateAuthToken(to - ElephantRunner.FETCH_DELAY);
-    logger.info("Fetching recent applications in undefined state between last time: " + from + ", and"
-        + " current time: " + to);
+    logger.info("Fetching all the applications in undefined state");
 
     // Fetch all apps in UNDEFINED state
     URL undefinedAppsURL = new URL(new URL("http://" + _resourceManagerAddress), String.format(
@@ -179,6 +178,7 @@ public class AnalyticJobGeneratorHadoop2 implements AnalyticJobGenerator {
       appList.add(_retryQueue.poll());
     }
 
+    logger.info("Fetched " + appList.size() + " applications in undefined state.");
     return appList;
   }
 
@@ -190,7 +190,7 @@ public class AnalyticJobGeneratorHadoop2 implements AnalyticJobGenerator {
   /**
    * Authenticate and update the token
    */
-  private void updateAuthToken(long currentTime) {
+  public void updateAuthToken(long currentTime) {
     if (currentTime - _tokenUpdatedTime > TOKEN_UPDATE_INTERVAL) {
       logger.info("AnalysisProvider updating its Authenticate Token...");
       _token = new AuthenticatedURL.Token();

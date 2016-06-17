@@ -171,6 +171,7 @@ class SparkFSFetcher(fetcherConfData: FetcherConfigurationData) extends Elephant
 
 
   private val _security = new HadoopSecurity()
+  _security.login()
 
   private def fs: FileSystem = {
 

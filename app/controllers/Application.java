@@ -89,7 +89,7 @@ import com.google.gson.*;
 public class Application extends Controller {
   private static final Logger logger = Logger.getLogger(Application.class);
   private static final long DAY = 24 * 60 * 60 * 1000;
-  private static final long FETCH_DELAY = 60 * 1000;
+  private static final long FETCH_LAG = 60 * 1000;
 
   private static final int PAGE_LENGTH = 20;                  // Num of jobs in a search page
   private static final int PAGE_BAR_LENGTH = 5;               // Num of pages shown in the page bar
@@ -130,7 +130,7 @@ public class Application extends Controller {
     long finishDate = now - DAY;
 
     // Update statistics only after FETCH_DELAY
-    if (now - _lastFetch > FETCH_DELAY) {
+    if (now - _lastFetch > FETCH_LAG) {
       _numJobsAnalyzed = AppResult.find.where().gt(AppResult.TABLE.FINISH_TIME, finishDate).findRowCount();
       _numJobsCritical = AppResult.find.where()
           .gt(AppResult.TABLE.FINISH_TIME, finishDate)

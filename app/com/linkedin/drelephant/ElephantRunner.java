@@ -16,24 +16,24 @@
 
 package com.linkedin.drelephant;
 
+import com.google.common.collect.Sets;
 import com.linkedin.drelephant.analysis.AnalyticJob;
 import com.linkedin.drelephant.analysis.AnalyticJobGenerator;
-import com.linkedin.drelephant.analysis.ApplicationType;
 import com.linkedin.drelephant.analysis.HDFSContext;
-import com.linkedin.drelephant.analysis.HadoopSystemContext;
 import com.linkedin.drelephant.analysis.AnalyticJobGeneratorHadoop2;
 
+import com.linkedin.drelephant.analysis.HadoopSystemContext;
 import com.linkedin.drelephant.math.Statistics;
 import com.linkedin.drelephant.security.HadoopSecurity;
 import java.io.IOException;
-import java.net.URL;
 import java.security.PrivilegedAction;
+import java.util.Comparator;
 import java.util.List;
-import java.util.concurrent.BlockingQueue;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.DelayQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.linkedin.drelephant.util.Utils;
@@ -51,116 +51,77 @@ import org.apache.log4j.Logger;
 public class ElephantRunner implements Runnable {
   private static final Logger logger = Logger.getLogger(ElephantRunner.class);
 
-  // Interval between fetches
-  private static final long FETCH_INTERVAL = Statistics.MINUTE_IN_MS;
-  // Time to wait if fetching job details fail
-  private static final long WAIT_INTERVAL = Statistics.MINUTE_IN_MS;
-  // Frequency with which running jobs should be analysed
-  private static final long JOB_UPDATE_INTERVAL = Statistics.MINUTE_IN_MS;
-  // We provide one minute job fetch delay due to the job sending lag from AM/NM to JobHistoryServer HDFS
-  public static final long FETCH_DELAY = Statistics.MINUTE_IN_MS;
   private static final String SPARK_APP_TYPE = "spark";
+  private static final String RUNNING_JOB_POOL_SIZE_KEY = "drelephant.analysis.completed.thread.count";
+  private static final String COMPLETED_JOB_POOL_SIZE_KEY = "drelephant.analysis.realtime.thread.count";
+  private static final String FETCH_INTERVAL_KEY = "drelephant.analysis.fetch.interval";
+  private static final String FETCH_LAG_KEY = "drelephant.analysis.fetch.lag";
+  private static final String RUNNING_JOB_UPDATE_INTERVAL_KEY = "drelephant.analysis.realtime.update.interval";
 
-  private AtomicBoolean _running = new AtomicBoolean(true);
-  private long lastRun;
+  // Default interval between fetches
+  private static final long DEFAULT_FETCH_INTERVAL = Statistics.MINUTE_IN_MS;
+  // Default frequency with which running jobs should be analysed
+  private static final long DEFAULT_RUNNING_JOB_UPDATE_INTERVAL = Statistics.MINUTE_IN_MS;
+  // We provide one minute job fetch delay due to the job sending lag from AM/NM to JobHistoryServer HDFS
+  private static final long DEFAULT_FETCH_LAG = Statistics.MINUTE_IN_MS;
+  // The default number of executor threads to analyse completed jobs
+  private static final long DEFAULT_COMPLETED_JOB_POOL_SIZE = 5;
+  // The default number of executor threads to analyse running jobs
+  private static final long DEFAULT_RUNNING_JOB_POOL_SIZE = 5; // TODO: Find optimal number of running threads
+
+  private long _completedExecutorCount = DEFAULT_COMPLETED_JOB_POOL_SIZE;
+  private long _runningExecutorCount = DEFAULT_RUNNING_JOB_POOL_SIZE;
+  private long _fetchInterval = DEFAULT_FETCH_LAG;
+  private long _runningJobUpdateInterval = DEFAULT_RUNNING_JOB_UPDATE_INTERVAL;
+  private long _fetchLag = DEFAULT_FETCH_LAG;
 
   private final HadoopSecurity _hadoopSecurity;
-  private final ExecutorService _completedJobPool;
-  private final ExecutorService _undefinedJobPool;
-  private final DelayQueue<AnalyticJob> _completedJobQueue;  // SUCCEEDED and FAILED jobs
-  private final DelayQueue<AnalyticJob> _undefinedJobQueue;  // Jobs in Undefined state (RUNNING, PREP)
+  private final Configuration _configuration;
+  private ExecutorService _completedJobPool;
+  private ExecutorService _undefinedJobPool;
 
-  private AnalyticJobGenerator _analyticJobGenerator;
+  // This queue will contain SUCCEEDED and FAILED jobs
+  private final DelayQueue<AnalyticJob> _completedJobQueue = new DelayQueue<AnalyticJob>();
+  // This queue will contain Jobs in Undefined state (RUNNING, PREP)
+  private final DelayQueue<AnalyticJob> _undefinedJobQueue = new DelayQueue<AnalyticJob>();
+
   private Cluster _cluster;
+  private AnalyticJobGenerator _analyticJobGenerator;
   private long _lastTime = 0;
   private long _currentTime = 0;
+  private AtomicBoolean _running = new AtomicBoolean(true);
 
-  public ElephantRunner(int completedJobPoolSize, int runningJobPoolSize) throws IOException {
+  public ElephantRunner() {
     _hadoopSecurity = new HadoopSecurity();
-    _cluster = new Cluster(new Configuration());
-
-    _completedJobPool = Executors.newFixedThreadPool(completedJobPoolSize);
-    _completedJobQueue = new DelayQueue<AnalyticJob>();
-    for (int i = 0; i < completedJobPoolSize; i++) {
-      _completedJobPool.submit(new CompletedExecutorThread(i + 1, _completedJobQueue));
-    }
-
-    _undefinedJobPool = Executors.newFixedThreadPool(runningJobPoolSize);
-    // Delay Queue will ensure running jobs to be analysed after a fixed delay/interval
-    _undefinedJobQueue = new DelayQueue<AnalyticJob>();
-    for (int i = 0; i < runningJobPoolSize; i++) {
-      _undefinedJobPool.submit(new UndefinedExecutorThread(i + 1, _undefinedJobQueue));
-    }
-  }
-
-  private void loadAnalyticJobGenerator() {
-    Configuration configuration = new Configuration();
-    if (HadoopSystemContext.isHadoop2Env()) {
-      _analyticJobGenerator = new AnalyticJobGeneratorHadoop2();
-    } else {
-      throw new RuntimeException("Unsupported Hadoop major version detected. It is not 2.x.");
-    }
-
-    try {
-      _analyticJobGenerator.configure(configuration);
-    } catch (Exception e) {
-      logger.error("Error occurred when configuring the analysis provider.", e);
-      throw new RuntimeException(e);
-    }
+    _configuration = new Configuration();
+    _analyticJobGenerator = new AnalyticJobGeneratorHadoop2();
   }
 
   @Override
   public void run() {
     try {
       logger.info("Dr.elephant has started");
+      initialize();
+      _cluster = new Cluster(_configuration);
+      _hadoopSecurity.login();
       _hadoopSecurity.doAs(new PrivilegedAction<Void>() {
         @Override
         public Void run() {
-          HDFSContext.load();
-          loadAnalyticJobGenerator();
-          ElephantContext.init();
-
           while (_running.get() && !Thread.currentThread().isInterrupted()) {
+            _currentTime = System.currentTimeMillis();
             _analyticJobGenerator.updateResourceManagerAddresses();
-            lastRun = System.currentTimeMillis();
-            logger.info("Fetching analytic job list...");
 
+            // Kerberos Authentation
             try {
               _hadoopSecurity.checkLogin();
             } catch (IOException e) {
               logger.info("Error with hadoop kerberos login", e);
-              //Wait for a while before retry
-              waitInterval(WAIT_INTERVAL);
+              waitInterval(_fetchInterval);
               continue;
             }
 
-            List<AnalyticJob> undefinedJobs;
-            List<AnalyticJob> completedJobs;
-            try {
-              _currentTime = System.currentTimeMillis();
-              undefinedJobs = _analyticJobGenerator.fetchUndefinedAnalyticJobs(_lastTime + 1, _currentTime);
-              completedJobs = _analyticJobGenerator.fetchCompletedAnalyticJobs(_lastTime + 1, _currentTime);
-              _lastTime = _currentTime;
-            } catch (Exception e) {
-              logger.error("Error fetching job list. Try again later...", e);
-              //Wait for a while before retry
-              waitInterval(WAIT_INTERVAL);
-              continue;
-            }
-            _undefinedJobQueue.addAll(undefinedJobs);
-
-            // There is a lag of job data from AM/NM to JobHistoryServer HDFS, we shouldn't use the current time,
-            // since there might be new jobs arriving after we fetch jobs. We provide one minute delay to address this
-            // lag.
-            for (int i = 0; i < completedJobs.size(); i++) {
-              completedJobs.get(i).updateExpiryTime(FETCH_DELAY);
-            }
-            _completedJobQueue.addAll(completedJobs);
-            logger.info("Completed Job queue size is " + _completedJobQueue.size());
-            logger.info("Undefined Job queue size is " + _undefinedJobQueue.size());
-
-            //Wait for a while before next fetch
-            waitInterval(FETCH_INTERVAL);
+            fetchApplications(_lastTime + 1, _currentTime);
+            waitInterval(_fetchInterval);
           }
           logger.info("Main thread is terminated.");
           return null;
@@ -174,12 +135,111 @@ public class ElephantRunner implements Runnable {
     }
   }
 
+  private void initialize() {
+    if (!HadoopSystemContext.isHadoop2Env()) {
+      throw new RuntimeException("Unsupported Hadoop major version detected. It is not 2.x.");
+    }
+
+    try {
+      _analyticJobGenerator.configure(_configuration);
+    } catch (Exception e) {
+      logger.error("Error occurred when configuring the analysis provider.", e);
+      throw new RuntimeException(e);
+    }
+
+    HDFSContext.load();
+    ElephantContext.init();
+    loadGeneralConfiguration();
+    loadExecutorThreads();
+  }
+
+  private void loadGeneralConfiguration() {
+    _configuration.addResource(this.getClass().getClassLoader().getResourceAsStream("GeneralConf.xml"));
+
+    _completedExecutorCount = getLongFromConf(_configuration, COMPLETED_JOB_POOL_SIZE_KEY, DEFAULT_COMPLETED_JOB_POOL_SIZE);
+    _runningExecutorCount = getLongFromConf(_configuration, RUNNING_JOB_POOL_SIZE_KEY, DEFAULT_RUNNING_JOB_POOL_SIZE);
+
+    _fetchInterval = getLongFromConf(_configuration, FETCH_INTERVAL_KEY, DEFAULT_FETCH_INTERVAL);
+    _fetchLag = getLongFromConf(_configuration, FETCH_LAG_KEY, DEFAULT_FETCH_LAG);
+
+    _runningJobUpdateInterval = getLongFromConf(_configuration, RUNNING_JOB_UPDATE_INTERVAL_KEY,
+        DEFAULT_RUNNING_JOB_UPDATE_INTERVAL);
+  }
+
+  private long getLongFromConf(Configuration conf, String key, long defaultValue) {
+    long result = defaultValue;
+    try {
+      result = conf.getLong(key, defaultValue);
+    } catch (NumberFormatException e) {
+      logger.error("Invalid configuration " + key + " in GeneralConf.xml. Value: " + conf.get(key)
+          + ". Resetting it to default value: " + defaultValue);
+    }
+    return result;
+  }
+
+  private void loadExecutorThreads() {
+    logger.info("The number of threads analysing completed jobs is " + _completedExecutorCount);
+    if (_completedExecutorCount > 0) {
+      _completedJobPool = Executors.newFixedThreadPool((int)_completedExecutorCount);
+      for (int i = 0; i < _completedExecutorCount; i++) {
+        _completedJobPool.submit(new CompletedExecutorThread(i + 1, _completedJobQueue));
+      }
+    }
+
+    logger.info("The number of threads analysing running jobs is " + _runningExecutorCount);
+    if (_runningExecutorCount > 0) {
+      _undefinedJobPool = Executors.newFixedThreadPool((int) _runningExecutorCount);
+      for (int i = 0; i < _runningExecutorCount; i++) {
+        _undefinedJobPool.submit(new UndefinedExecutorThread(i + 1, _undefinedJobQueue));
+      }
+    }
+  }
+
+  /**
+   * Fetch all the completed jobs and jobs in undefined state from the resource manager
+   */
+  private void fetchApplications(long from, long to) {
+    logger.info("Fetching all the analytic apps which started between " + from + " and " + to);
+
+    List<AnalyticJob> undefinedJobs;
+    List<AnalyticJob> completedJobs;
+    try {
+      _analyticJobGenerator.updateAuthToken(to - _fetchLag);
+
+      undefinedJobs = _analyticJobGenerator.fetchUndefinedAnalyticJobs(from, to);
+      completedJobs = _analyticJobGenerator.fetchCompletedAnalyticJobs(from, to);
+
+      Set<AnalyticJob> commonJobs = Utils.getIntersection(undefinedJobs, completedJobs);
+      if (!commonJobs.isEmpty()) {
+        // Make sure no job belongs to both queues. This may happen when a job completes(succeeded/failed)
+        // after being added to the undefined queue and before being added to the completed queue.
+        undefinedJobs.removeAll(commonJobs);
+      }
+    } catch (Exception e) {
+      logger.error("Error fetching job list. Try again later...", e);
+      return;
+    }
+
+    // There is a lag of job data from AM/NM to JobHistoryServer HDFS, we shouldn't use the current time, since
+    // there might be new jobs arriving after we fetch jobs. We provide one minute delay to address this lag.
+    for (int i = 0; i < completedJobs.size(); i++) {
+      completedJobs.get(i).updateExpiryTime(_fetchLag);
+    }
+
+    logger.info("Completed Job queue size is " + (_completedJobQueue.size() + completedJobs.size()));
+    logger.info("Undefined Job queue size is " + (_undefinedJobQueue.size() + undefinedJobs.size()));
+
+    _completedJobQueue.addAll(completedJobs);
+    _undefinedJobQueue.addAll(undefinedJobs);
+
+    _lastTime = to;
+  }
+
   private class CompletedExecutorThread implements Runnable {
-
     private int _threadId;
-    private BlockingQueue<AnalyticJob> _completedJobQueue;
+    private DelayQueue<AnalyticJob> _completedJobQueue;
 
-    CompletedExecutorThread(int threadNum, BlockingQueue<AnalyticJob> completedJobQueue) {
+    CompletedExecutorThread(int threadNum, DelayQueue<AnalyticJob> completedJobQueue) {
       this._threadId = threadNum;
       this._completedJobQueue = completedJobQueue;
     }
@@ -189,24 +249,22 @@ public class ElephantRunner implements Runnable {
       while (_running.get() && !Thread.currentThread().isInterrupted()) {
         AnalyticJob analyticJob = null;
         try {
-          analyticJob = _completedJobQueue.take();
-          Job job = _cluster.getJob(JobID.forName(Utils.getJobIdFromApplicationId(analyticJob.getAppId())));
-          if (job == null) {
-            throw new RuntimeException("App " + analyticJob.getAppId() + " not found. This should not happen. Please"
-                + " debug this issue.");
-          }
+          analyticJob =_completedJobQueue.take();
+          Job job = getJobFromCluster(analyticJob);
           JobStatus.State jobState = job.getJobState();
-          analyticJob.setJobStatus(jobState.name()).setSeverity(-1);
-          logger.info("Executor thread " + _threadId + " for completed jobs is analyzing "
-              + analyticJob.getAppType().getName() + " " + analyticJob.getAppId() + " " + jobState.name());
 
           // Job State can be RUNNING, SUCCEEDED, FAILED, PREP or KILLED
-          if (jobState == JobStatus.State.SUCCEEDED || jobState == JobStatus.State.FAILED) {
+          if (job.getJobState() == JobStatus.State.SUCCEEDED || job.getJobState() == JobStatus.State.FAILED) {
+            logger.info("Executor thread " + _threadId + " for completed jobs is analyzing "
+                + analyticJob.getAppType().getName() + " " + analyticJob.getAppId() + " :: " + jobState.name());
             AppResult result = analyticJob.getAnalysis();
-            if (AppResult.find.byId(analyticJob.getAppId()) == null) {
+            AppResult jobInDb = AppResult.find.byId(analyticJob.getAppId());
+            if (jobInDb == null) {
               result.save();
             } else {
-              result.update();
+              // Delete and save to prevent Optimistic Locking
+              jobInDb.delete();
+              result.save();
             }
           } else {
             // Should not reach here. We consider only SUCCEEDED and FAILED JOBs in _completedJobQueue
@@ -228,9 +286,9 @@ public class ElephantRunner implements Runnable {
   private class UndefinedExecutorThread implements Runnable {
 
     private int _threadId;
-    private BlockingQueue<AnalyticJob> _undefinedJobQueue;
+    private DelayQueue<AnalyticJob> _undefinedJobQueue;
 
-    UndefinedExecutorThread(int threadNum, BlockingQueue<AnalyticJob> undefinedJobQueue) {
+    UndefinedExecutorThread(int threadNum, DelayQueue<AnalyticJob> undefinedJobQueue) {
       this._threadId = threadNum;
       this._undefinedJobQueue = undefinedJobQueue;
     }
@@ -240,24 +298,19 @@ public class ElephantRunner implements Runnable {
       while (_running.get() && !Thread.currentThread().isInterrupted()) {
         AnalyticJob analyticJob = null;
         try {
-          analyticJob = _undefinedJobQueue.take();
-          Job job = _cluster.getJob(JobID.forName(Utils.getJobIdFromApplicationId(analyticJob.getAppId())));
-          if (job == null) {
-            throw new RuntimeException("App " + analyticJob.getAppId() + " not found. This should not happen. Please"
-                + " debug this issue.");
-          }
+          analyticJob =_undefinedJobQueue.take();
+          Job job = getJobFromCluster(analyticJob);
           JobStatus.State jobState = job.getJobState();
-          analyticJob.setJobStatus(jobState.name()).setFinalStatus(jobState.name()).setSeverity(-1);;
 
+          // Job State can be RUNNING, SUCCEEDED, FAILED, PREP or KILLED
           if (jobState == JobStatus.State.SUCCEEDED || jobState == JobStatus.State.FAILED) {
-            analyticJob.setFinishTime(job.getFinishTime());
             logger.info("App " + analyticJob.getAppId() + " has now completed. Adding it to the completed job Queue.");
-            _completedJobQueue.add(analyticJob);
+            delayedEnqueue(analyticJob.setFinishTime(job.getFinishTime()), _completedJobQueue);
           } else if (jobState == JobStatus.State.RUNNING) {
             logger.info("Executor thread " + _threadId + " for undefined jobs is analyzing "
-                + analyticJob.getAppType().getName() + " " + analyticJob.getAppId() + " " + jobState.name());
+                + analyticJob.getAppType().getName() + " " + analyticJob.getAppId() + " :: " + jobState.name());
             if (analyticJob.getAppType().getName().equalsIgnoreCase(SPARK_APP_TYPE)) {
-              // Ignore as we do not capture any metrics for Spark jobs
+              // Ignore as we do not capture any metrics for Spark jobs now
               delayedEnqueue(analyticJob, _undefinedJobQueue);
             } else {
               AppResult result = analyticJob.getAnalysis();
@@ -269,6 +322,7 @@ public class ElephantRunner implements Runnable {
               }
             }
           } else {
+            // Ignore Job State
             delayedEnqueue(analyticJob, _undefinedJobQueue);
           }
         } catch (InterruptedException ex) {
@@ -282,8 +336,27 @@ public class ElephantRunner implements Runnable {
     }
   }
 
-  private void delayedEnqueue(AnalyticJob analyticJob, BlockingQueue<AnalyticJob> jobQueue) {
-    analyticJob.updateExpiryTime(JOB_UPDATE_INTERVAL);
+  private Job getJobFromCluster(AnalyticJob analyticJob) throws IOException, InterruptedException {
+    Job job = _cluster.getJob(JobID.forName(Utils.getJobIdFromApplicationId(analyticJob.getAppId())));
+    if (job == null) {
+      throw new RuntimeException("App " + analyticJob.getAppId() + " not found. This should not happen. Please"
+          + " debug this issue.");
+    }
+
+    //Update the current status
+    analyticJob.setJobStatus(job.getJobState().name()).setSeverity(0);
+    return job;
+  }
+
+  /**
+   * Update the expiry time for the Delay Queue Item and enqueue.
+   * This will make the item available in queue only after its time has expired.
+   *
+   * @param analyticJob The job to be enqueued
+   * @param jobQueue The Delay Queue
+   */
+  private void delayedEnqueue(AnalyticJob analyticJob, DelayQueue<AnalyticJob> jobQueue) {
+    analyticJob.updateExpiryTime(_runningJobUpdateInterval);
     jobQueue.add(analyticJob);
   }
 
@@ -301,7 +374,7 @@ public class ElephantRunner implements Runnable {
 
   private void waitInterval(long interval) {
     // Wait for long enough
-    long nextRun = lastRun + interval;
+    long nextRun = _lastTime + interval;
     long waitTime = nextRun - System.currentTimeMillis();
 
     if (waitTime <= 0) {
@@ -325,4 +398,23 @@ public class ElephantRunner implements Runnable {
     }
   }
 
+  public boolean isKilled() {
+    boolean killed = true;
+    if (_completedJobPool != null && _undefinedJobPool != null) {
+      return !_running.get() && _completedJobPool.isShutdown() && _undefinedJobPool.isShutdown();
+    }
+    return killed;
+  }
+
+  public DelayQueue<AnalyticJob> getCompletedJobQueue() {
+    return _completedJobQueue;
+  }
+
+  public DelayQueue<AnalyticJob> getUndefinedJobQueue() {
+    return _undefinedJobQueue;
+  }
+
+  public long getFetchLag() {
+    return _fetchLag;
+  }
 }

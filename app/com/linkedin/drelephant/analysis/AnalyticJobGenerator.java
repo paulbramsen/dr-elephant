@@ -74,4 +74,9 @@ public interface AnalyticJobGenerator {
    * @param job The job to add
    */
   public void addIntoRetries(AnalyticJob job);
+
+  /**
+   * Authenticate and update the token
+   */
+  void updateAuthToken(long time);
 }
