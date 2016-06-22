@@ -294,4 +294,20 @@ public final class Utils {
       return defaultValue;
     }
   }
+
+  /**
+   * Return the formatted string unless one of the args is null in which case null is returned
+   *
+   * @param formatString the standard Java format string
+   * @param args objects to put in the format string
+   * @return formatted String or null
+   */
+  public static String formatStringOrNull(String formatString, Object... args) {
+    for (Object o : args) {
+      if (o == null) {
+        return null;
+      }
+    }
+    return String.format(formatString, args);
+  }
 }
