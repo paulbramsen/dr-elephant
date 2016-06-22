@@ -348,6 +348,7 @@ private object SparkFSFetcher {
   val LOG_PREFIX = "EVENT_LOG_"
   val COMPRESSION_CODEC_PREFIX = EventLoggingListener.COMPRESSION_CODEC_KEY + "_"
 
+  // Param map property names that allow users to configer various aspects of the fetcher
   val NAMENODE_ADDRESSES = "namenode_addresses"
   val SPARK_LOG_EXT = "spark_log_ext"
 }
