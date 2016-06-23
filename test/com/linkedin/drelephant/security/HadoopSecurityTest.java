@@ -87,7 +87,6 @@ public class HadoopSecurityTest {
         };
 
         new MockUp<HadoopSecurity>() {
-          @SuppressWarnings("unused")
           @Mock
           public void checkLogin(){
             return;
@@ -119,7 +118,6 @@ public class HadoopSecurityTest {
         };
 
         new MockUp<HadoopSecurity>() {
-          @SuppressWarnings("unused")
           @Mock
           public void checkLogin(){
             return;
@@ -151,7 +149,6 @@ public class HadoopSecurityTest {
         };
 
         new MockUp<HadoopSecurity>() {
-          @SuppressWarnings("unused")
           @Mock
           public void checkLogin(){
             return;
@@ -183,7 +180,6 @@ public class HadoopSecurityTest {
         };
 
         new MockUp<HadoopSecurity>() {
-          @SuppressWarnings("unused")
           @Mock
           public void checkLogin(){
             return;

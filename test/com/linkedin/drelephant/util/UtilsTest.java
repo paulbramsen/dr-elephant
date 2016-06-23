@@ -17,7 +17,6 @@
 package com.linkedin.drelephant.util;
 
 
-import com.linkedin.drelephant.ElephantRunner;
 import com.linkedin.drelephant.analysis.AnalyticJob;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -25,7 +24,6 @@ import java.util.List;
 import java.util.Map;
 
 import java.util.Set;
-import mockit.Deencapsulation;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;

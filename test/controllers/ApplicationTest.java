@@ -17,20 +17,15 @@
 package controllers;
 
 import com.avaje.ebean.Query;
-import com.fasterxml.jackson.databind.JsonNode;
-import java.util.concurrent.TimeUnit;
+
 import models.AppResult;
-import org.junit.AfterClass;
 import org.junit.Before;
-import org.junit.BeforeClass;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import play.GlobalSettings;
 import play.api.mvc.Content;
-import play.libs.WS;
 import play.test.FakeApplication;
-import play.test.Helpers;
 import views.html.page.homePage;
 import views.html.results.searchResults;
 

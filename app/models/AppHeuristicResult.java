@@ -22,7 +22,6 @@ import javax.persistence.CascadeType;
 import javax.persistence.Column;
 import javax.persistence.Entity;
 import javax.persistence.Id;
-import javax.persistence.Lob;
 import javax.persistence.ManyToOne;
 
 import javax.persistence.OneToMany;
@@ -33,7 +32,6 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.linkedin.drelephant.analysis.Severity;
 import com.linkedin.drelephant.util.Utils;
 
-import javax.persistence.Version;
 import play.db.ebean.Model;
 
 

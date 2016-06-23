@@ -21,7 +21,6 @@ import play.Application;
 import play.GlobalSettings;
 import play.Logger;
 
-import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.logging.Level;

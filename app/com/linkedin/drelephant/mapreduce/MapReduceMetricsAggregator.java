@@ -21,7 +21,6 @@ import com.linkedin.drelephant.analysis.HadoopMetricsAggregator;
 import com.linkedin.drelephant.analysis.HadoopAggregatedData;
 import com.linkedin.drelephant.configurations.aggregator.AggregatorConfigurationData;
 import com.linkedin.drelephant.mapreduce.data.MapReduceApplicationData;
-import com.linkedin.drelephant.mapreduce.data.MapReduceCounterData;
 import org.apache.log4j.Logger;
 
 

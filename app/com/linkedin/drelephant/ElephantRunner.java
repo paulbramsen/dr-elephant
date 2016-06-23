@@ -16,7 +16,6 @@
 
 package com.linkedin.drelephant;
 
-import com.google.common.collect.Sets;
 import com.linkedin.drelephant.analysis.AnalyticJob;
 import com.linkedin.drelephant.analysis.AnalyticJobGenerator;
 import com.linkedin.drelephant.analysis.HDFSContext;
@@ -27,10 +26,8 @@ import com.linkedin.drelephant.math.Statistics;
 import com.linkedin.drelephant.security.HadoopSecurity;
 import java.io.IOException;
 import java.security.PrivilegedAction;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.concurrent.DelayQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -153,6 +150,9 @@ public class ElephantRunner implements Runnable {
     loadExecutorThreads();
   }
 
+  /**
+   * Load all the properties from GeneralConf.xml
+   */
   private void loadGeneralConfiguration() {
     _configuration.addResource(this.getClass().getClassLoader().getResourceAsStream("GeneralConf.xml"));
 
@@ -166,6 +166,14 @@ public class ElephantRunner implements Runnable {
         DEFAULT_RUNNING_JOB_UPDATE_INTERVAL);
   }
 
+  /**
+   * Extract a long value from the configuration
+   *
+   * @param conf The configuration object
+   * @param key The key to be extracted
+   * @param defaultValue The default value to use when key is not found
+   * @return the extracted value
+   */
   private long getLongFromConf(Configuration conf, String key, long defaultValue) {
     long result = defaultValue;
     try {
@@ -177,6 +185,9 @@ public class ElephantRunner implements Runnable {
     return result;
   }
 
+  /**
+   * Create a thread pool and load all the executor threads for running and completed jobs
+   */
   private void loadExecutorThreads() {
     logger.info("The number of threads analysing completed jobs is " + _completedExecutorCount);
     if (_completedExecutorCount > 0) {
@@ -196,7 +207,15 @@ public class ElephantRunner implements Runnable {
   }
 
   /**
-   * Fetch all the completed jobs and jobs in undefined state from the resource manager
+   * Fetch all the completed jobs and jobs in <i>undefined</i> state from the resource manager
+   * whose start time lie between <i>from</i> and <i>to</i>.
+   *
+   * Ideally we want to fetch only the completed and running jobs but since the resource manager
+   * api doesn't allow filtering by running job, we will fetch all the jobs in <i>undefined</i>
+   * state and then poll them.
+   *
+   * @param from Lower limit on the start time of the job in millisec
+   * @param to Upper limit on the start time of the job ib millisec
    */
   private void fetchApplications(long from, long to) {
     logger.info("Fetching all the analytic apps which started between " + from + " and " + to);
@@ -251,6 +270,7 @@ public class ElephantRunner implements Runnable {
         try {
           analyticJob =_completedJobQueue.take();
           Job job = getJobFromCluster(analyticJob);
+          analyticJob.setJobStatus(job.getJobState().name()).setSeverity(0);
           JobStatus.State jobState = job.getJobState();
 
           // Job State can be RUNNING, SUCCEEDED, FAILED, PREP or KILLED
@@ -300,6 +320,7 @@ public class ElephantRunner implements Runnable {
         try {
           analyticJob =_undefinedJobQueue.take();
           Job job = getJobFromCluster(analyticJob);
+          analyticJob.setJobStatus(job.getJobState().name()).setSeverity(0);
           JobStatus.State jobState = job.getJobState();
 
           // Job State can be RUNNING, SUCCEEDED, FAILED, PREP or KILLED
@@ -336,15 +357,20 @@ public class ElephantRunner implements Runnable {
     }
   }
 
+  /**
+   * Get the analytic job from the cluster
+   *
+   * @param analyticJob the job being analyzed
+   * @return The Job from the cluster
+   * @throws IOException
+   * @throws InterruptedException
+   */
   private Job getJobFromCluster(AnalyticJob analyticJob) throws IOException, InterruptedException {
     Job job = _cluster.getJob(JobID.forName(Utils.getJobIdFromApplicationId(analyticJob.getAppId())));
     if (job == null) {
       throw new RuntimeException("App " + analyticJob.getAppId() + " not found. This should not happen. Please"
           + " debug this issue.");
     }
-
-    //Update the current status
-    analyticJob.setJobStatus(job.getJobState().name()).setSeverity(0);
     return job;
   }
 
@@ -360,6 +386,19 @@ public class ElephantRunner implements Runnable {
     jobQueue.add(analyticJob);
   }
 
+  public DelayQueue<AnalyticJob> getCompletedJobQueue() {
+    return _completedJobQueue;
+  }
+
+  public DelayQueue<AnalyticJob> getUndefinedJobQueue() {
+    return _undefinedJobQueue;
+  }
+
+  /**
+   * Add analytic job into the retry queue or drop it depending the number of retries.
+   *
+   * @param analyticJob the job being analyzed
+   */
   private void retryAndDrop(AnalyticJob analyticJob) {
     if (analyticJob != null && analyticJob.retry()) {
       logger.error("Add analytic job id [" + analyticJob.getAppId() + "] into the retry list.");
@@ -372,6 +411,11 @@ public class ElephantRunner implements Runnable {
     }
   }
 
+  /**
+   * Sleep for <i>interval</i> time
+   *
+   * @param interval the time to wait/sleep
+   */
   private void waitInterval(long interval) {
     // Wait for long enough
     long nextRun = _lastTime + interval;
@@ -388,6 +432,9 @@ public class ElephantRunner implements Runnable {
     }
   }
 
+  /**
+   * Kill the Dr. Elephant daemon
+   */
   public void kill() {
     _running.set(false);
     if (_completedJobPool != null && !_completedJobPool.isShutdown()) {
@@ -404,17 +451,5 @@ public class ElephantRunner implements Runnable {
       return !_running.get() && _completedJobPool.isShutdown() && _undefinedJobPool.isShutdown();
     }
     return killed;
-  }
-
-  public DelayQueue<AnalyticJob> getCompletedJobQueue() {
-    return _completedJobQueue;
-  }
-
-  public DelayQueue<AnalyticJob> getUndefinedJobQueue() {
-    return _undefinedJobQueue;
-  }
-
-  public long getFetchLag() {
-    return _fetchLag;
   }
 }

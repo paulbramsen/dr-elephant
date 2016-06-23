@@ -17,20 +17,13 @@
 package com.linkedin.drelephant;
 
 import com.linkedin.drelephant.analysis.AnalyticJob;
-import com.linkedin.drelephant.analysis.AnalyticJobGenerator;
 import com.linkedin.drelephant.analysis.AnalyticJobGeneratorHadoop2;
 import com.linkedin.drelephant.analysis.HadoopSystemContext;
-import com.linkedin.drelephant.schedulers.Scheduler;
-import com.linkedin.drelephant.util.InfoExtractor;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
-import java.util.Set;
 import java.util.concurrent.DelayQueue;
-import javax.validation.constraints.AssertTrue;
 import mockit.Deencapsulation;
-import mockit.Expectations;
 import mockit.Mock;
 import mockit.MockUp;
 import org.apache.hadoop.conf.Configuration;
@@ -76,7 +69,7 @@ public class ElephantRunnerTest {
 
     new MockUp<ElephantContext>() {
       @Mock
-      public void init() {
+      public void $init() {
         return;
       }
     };
@@ -135,7 +128,7 @@ public class ElephantRunnerTest {
 
     new MockUp<ElephantContext>() {
       @Mock
-      public void init() {
+      public void $init() {
         return;
       }
     };
@@ -173,7 +166,7 @@ public class ElephantRunnerTest {
 
     new MockUp<ElephantContext>() {
       @Mock
-      public void init() {
+      public void $init() {
         return;
       }
     };

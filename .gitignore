@@ -17,9 +17,10 @@
 # general
 *~
 *.log
-tmp
-dump
 .history
+.DS_Store
+dump
+tmp
 /*.iml
 /out
 

@@ -25,26 +25,26 @@
     <table>
       <tr>
         <td class="metrics-dashboard hasTooltip" width="175px">
-          <img src='@routes.Assets.at("images/usedmemory.png")' class="metrics-icons" alt='used resources'/>@Utils.getDurationInGBHours(result.resourceUsed)
+          <img src='@routes.Assets.at("images/usedmemory.png")' class="metrics-icons" alt='used resources'/>  @Utils.getDurationInGBHours(result.resourceUsed)
           <div id="tooltip-div">
             <span> The resources used by the job in GB Hours</span>
           </div>
         </td>
         <td class="metrics-dashboard hasTooltip" width="100px">
-          <img src='@routes.Assets.at("images/wastedmemory.png")' class="metrics-icons" alt='wasted resources'/>@(Utils.getPercentage(result.resourceWasted, result.resourceUsed))
+          <img src='@routes.Assets.at("images/wastedmemory.png")' class="metrics-icons" alt='wasted resources'/>  @(Utils.getPercentage(result.resourceWasted, result.resourceUsed))
           <div id="tooltip-div">
-            <span> The percent of resources wasted</span>
+            <span> The percentage of resources wasted</span>
           </div>
         </td>
         <td class="metrics-dashboard hasTooltip" width="140px">
-          <img src='@routes.Assets.at("images/runtime.png")' class="metrics-icons" alt='total runtime'/>@(Utils.getDurationBreakdown(result.finishTime - result.startTime))
+          <img src='@routes.Assets.at("images/runtime.png")' class="metrics-icons" alt='total runtime'/>  @(Utils.getDurationBreakdown(result.finishTime - result.startTime))
           <div id="tooltip-div">
             <span> Total runtime of the job in HH:MM:SS</span>
           </div></td>
         <td class="metrics-dashboard hasTooltip" width="100px">
-          <img src='@routes.Assets.at("images/waittime.png")' class="metrics-icons" alt='total wait time'/>@(Utils.getPercentage(result.totalDelay, result.finishTime - result.startTime))
+          <img src='@routes.Assets.at("images/waittime.png")' class="metrics-icons" alt='total wait time'/>  @(Utils.getPercentage(result.totalDelay, result.finishTime - result.startTime))
           <div id="tooltip-div">
-            <span> The percent of time job waited</span>
+            <span> The percentage of time job waited</span>
           </div>
         </td>
       </tr>

@@ -19,7 +19,6 @@ package com.linkedin.drelephant.mapreduce.data;
 import com.linkedin.drelephant.analysis.ApplicationType;
 import com.linkedin.drelephant.analysis.HadoopApplicationData;
 
-import javax.security.auth.login.Configuration;
 import java.util.Properties;
 
 
@@ -31,6 +30,9 @@ public class MapReduceApplicationData implements HadoopApplicationData {
 
   //private boolean _succeeded = true;
 
+  /**
+   * All supported status of the Hadoop application
+   */
   public static enum Status {
     SUCCEEDED,
     FAILED,

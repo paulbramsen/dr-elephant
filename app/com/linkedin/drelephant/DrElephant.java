@@ -16,9 +16,6 @@
 
 package com.linkedin.drelephant;
 
-import com.linkedin.drelephant.analysis.HadoopSystemContext;
-import java.io.IOException;
-
 
 /**
  * The main class which starts Dr. Elephant

@@ -27,12 +27,12 @@ import models.AppHeuristicResult;
 import models.AppHeuristicResultDetails;
 import models.AppResult;
 import org.apache.log4j.Logger;
-import org.apache.hadoop.metrics.MetricsContext;
 
 
 /**
  * This class wraps some basic meta data of a completed application run (notice that the information is generally the
  * same regardless of hadoop versions and application types), and then promises to return the analyzed result later.
+ * This class implements Delayed so that a running job can be added back to the Queue after a set delay.
  */
 public class AnalyticJob implements Delayed {
   private static final Logger logger = Logger.getLogger(AnalyticJob.class);
@@ -279,9 +279,10 @@ public class AnalyticJob implements Delayed {
    * @throws Exception if the analysis process encountered a problem.
    * @return the analysed AppResult
    */
-  public AppResult  getAnalysis() throws Exception {
+  public AppResult getAnalysis() throws Exception {
     ElephantFetcher fetcher = ElephantContext.instance().getFetcherForApplicationType(getAppType());
     HadoopApplicationData data = fetcher.fetchData(this);
+    this.setFinishTime(data.getFinishTime()).setJobStatus(data.getStatus());
 
     // Run all heuristics over the fetched data
     List<HeuristicResult> analysisResults = new ArrayList<HeuristicResult>();
@@ -298,10 +299,6 @@ public class AnalyticJob implements Delayed {
         }
       }
     }
-
-    // Update Analytic Job
-    this.setFinishTime(data.getFinishTime());
-    this.setJobStatus(data.getStatus());
 
     JobType jobType = ElephantContext.instance().matchJobType(data);
     String jobTypeName = jobType == null ? UNKNOWN_JOB_TYPE : jobType.getName();

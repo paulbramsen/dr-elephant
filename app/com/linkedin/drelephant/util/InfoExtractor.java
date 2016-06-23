@@ -103,8 +103,6 @@ public class InfoExtractor {
     Scheduler scheduler = getSchedulerInstance(data.getAppId(), properties);
 
     if (scheduler != null) {
-      //TODO-1 remove
-      logger.info("Scheduler is not null");
       String appId = data.getAppId();
 
       // Load all the Ids

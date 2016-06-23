@@ -56,8 +56,7 @@
 <h3>Suggestions</h3>
 <h5><strong>1. If there are unused executors (0 tasks, 0 seconds to run and etc.) </strong></h5>
 <p>
-  Even though a Spark application asks for all the resources all at once, YARN will only grant resources gradually.
-  Users should try to allocate less in this case since those resources won't be used anyway. An
+  Even though a Spark application asks for all the resources all at once, YARN will only grant resources gradually. Users should try to allocate less in this case since those resources won't be used anyway. An
   application will kick off even only part of the resources are allocated. The allocation speed is majorly depending on
   how busy the cluster is. However, oftentime, asking for less memory per executor and less executor in total will
   always help shorten the entire allocation time.

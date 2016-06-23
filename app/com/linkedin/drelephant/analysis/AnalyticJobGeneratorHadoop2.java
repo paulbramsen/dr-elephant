@@ -17,7 +17,6 @@
 package com.linkedin.drelephant.analysis;
 
 import com.linkedin.drelephant.ElephantContext;
-import com.linkedin.drelephant.ElephantRunner;
 import com.linkedin.drelephant.math.Statistics;
 import java.io.IOException;
 import java.net.HttpURLConnection;
@@ -36,7 +35,6 @@ import org.apache.hadoop.security.authentication.client.AuthenticationException;
 import org.apache.log4j.Logger;
 import org.codehaus.jackson.JsonNode;
 import org.codehaus.jackson.map.ObjectMapper;
-import org.json4s.jackson.Json;
 
 
 /**
@@ -227,13 +225,17 @@ public class AnalyticJobGeneratorHadoop2 implements AnalyticJobGenerator {
     return rootNode.path("apps").path("app");
   }
 
+  /**
+   * When called first time after launch, hit the DB and avoid duplicated analytic jobs that have been analyzed
+   * before.
+   * @param apps The list of apps in JsonNode
+   * @param lastTime The upper limit of the last fetch interval
+   * @return The filtered list of analytic jobs
+   */
   private List<AnalyticJob> filterDuplicates(JsonNode apps, long lastTime) {
     List<AnalyticJob> appList = new ArrayList<AnalyticJob>();
     for (JsonNode app : apps) {
       String appId = app.get("id").getValueAsText();
-
-      // When called first time after launch, hit the DB and avoid duplicated analytic jobs that have been analyzed
-      // before.
       if (lastTime > 0 || (lastTime == 0 && AppResult.find.byId(appId) == null) ||
           (lastTime == 0 && !AppResult.find.select("id").where().eq(AppResult.TABLE.ID, appId)
               .ne(AppResult.TABLE.STATUS, JobStatus.State.SUCCEEDED)

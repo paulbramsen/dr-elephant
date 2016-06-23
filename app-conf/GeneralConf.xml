@@ -20,17 +20,17 @@
 <configuration>
   <property>
     <name>drelephant.analysis.completed.thread.count</name>
-    <value>1</value>
+    <value>5</value>
     <description>Number of threads to analyse completed(succeeded/failed) jobs.</description>
   </property>
   <property>
     <name>drelephant.analysis.realtime.thread.count</name>
-    <value>1</value>
+    <value>5</value>
     <description>Number of threads to analyse running jobs</description>
   </property>
   <property>
     <name>drelephant.analysis.fetch.interval</name>
-    <value>5000</value>
+    <value>60000</value>
     <description>Interval between fetches (in millisec)</description>
   </property>
   <property>
@@ -40,7 +40,7 @@
   </property>
   <property>
     <name>drelephant.analysis.realtime.update.interval</name>
-    <value>5000</value>
+    <value>60000</value>
     <description>How frequently running jobs should be analysed. (in millisec)</description>
   </property>
 </configuration>

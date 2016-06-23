@@ -18,6 +18,7 @@ package com.linkedin.drelephant.mapreduce;
 
 import com.linkedin.drelephant.analysis.AnalyticJob;
 import com.linkedin.drelephant.analysis.ElephantFetcher;
+import com.linkedin.drelephant.analysis.HadoopSystemContext;
 import com.linkedin.drelephant.mapreduce.data.MapReduceApplicationData;
 import com.linkedin.drelephant.mapreduce.data.MapReduceCounterData;
 import com.linkedin.drelephant.mapreduce.data.MapReduceTaskData;
@@ -36,7 +37,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.TIPStatus;
 import org.apache.hadoop.mapreduce.*;
 import org.apache.hadoop.security.authentication.client.AuthenticatedURL;
@@ -53,27 +53,30 @@ public class MapReduceFetcherHadoop2 implements ElephantFetcher<MapReduceApplica
   private static final Logger logger = Logger.getLogger(ElephantFetcher.class);
   private static final int MAX_SAMPLE_SIZE = 200;
   private static final String SAMPLING_ENABLED = "sampling_enabled";
-  // We provide one minute job fetch delay due to the job sending lag from AM/NM to JobHistoryServer HDFS
 
   private URLFactory _urlFactory;
   private JSONFactory _jsonFactory;
   private String _jhistoryWebAddr;
   private FetcherConfigurationData _fetcherConfigurationData;
   private Cluster _cluster;
+  private Configuration _configuration;
 
   public MapReduceFetcherHadoop2(FetcherConfigurationData fetcherConfData) throws IOException {
     this._fetcherConfigurationData = fetcherConfData;
+    this._configuration = new Configuration();
+    this._jsonFactory = new JSONFactory();
+    initCluster();
+  }
 
-    final String jhistoryAddr = new Configuration().get("mapreduce.jobhistory.webapp.address");
+  private void initCluster() throws IOException {
+    this._cluster = new Cluster(_configuration);
+
+    final String jhistoryAddr = _configuration.get("mapreduce.jobhistory.webapp.address");
+    _jhistoryWebAddr = "http://" + jhistoryAddr + "/jobhistory/job/";
 
     logger.info("Connecting to the job history server at " + jhistoryAddr + "...");
     _urlFactory = new URLFactory(jhistoryAddr);
     logger.info("Connection success.");
-
-    _jsonFactory = new JSONFactory();
-    _jhistoryWebAddr = "http://" + jhistoryAddr + "/jobhistory/job/";
-
-    _cluster = new Cluster(new Configuration());
   }
 
   @Override
@@ -81,9 +84,9 @@ public class MapReduceFetcherHadoop2 implements ElephantFetcher<MapReduceApplica
       throws IOException, AuthenticationException, InterruptedException {
     String appId = analyticJob.getAppId();
     String jobId = Utils.getJobIdFromApplicationId(appId);
-    MapReduceApplicationData jobData;
     analyticJob.setTrackingUrl(_jhistoryWebAddr + jobId);
 
+    MapReduceApplicationData jobData;
     if (analyticJob.getJobStatus().equals("SUCCEEDED") || analyticJob.getJobStatus().equals("FAILED")) {
       jobData = fetchCompletedJobsData(analyticJob);
     } else if (analyticJob.getJobStatus().equals("RUNNING")) {
@@ -93,14 +96,16 @@ public class MapReduceFetcherHadoop2 implements ElephantFetcher<MapReduceApplica
       throw new RuntimeException(appId + " is in " + analyticJob.getJobStatus() + " state which is not supported.");
     }
 
-    jobData.setAppId(appId).setJobId(jobId);
     return jobData;
   }
 
   private MapReduceApplicationData fetchCompletedJobsData(AnalyticJob analyticJob)
       throws IOException, AuthenticationException {
     MapReduceApplicationData jobData = new MapReduceApplicationData();
-    String jobId = Utils.getJobIdFromApplicationId(analyticJob.getAppId());
+    String appId = analyticJob.getAppId();
+    String jobId = Utils.getJobIdFromApplicationId(appId);
+    jobData.setAppId(appId).setJobId(jobId).setStatus(analyticJob.getJobStatus());
+
     try {
       // Fetch job config
       Properties jobConf = _jsonFactory.getProperties(_urlFactory.getJobConfigURL(jobId));
@@ -146,16 +151,25 @@ public class MapReduceFetcherHadoop2 implements ElephantFetcher<MapReduceApplica
     return jobData;
   }
 
+  /**
+   * Fetch information for running jobs. When job is in Running state,
+   * check for all the completed tasks and compute the metrics.
+   *
+   * @param analyticJob the job being analyzed
+   * @return
+   * @throws IOException
+   * @throws AuthenticationException
+   * @throws InterruptedException
+   */
   private MapReduceApplicationData fetchRunningJobsData(AnalyticJob analyticJob)
       throws IOException, AuthenticationException, InterruptedException {
     MapReduceApplicationData jobData = new MapReduceApplicationData();
     String appId = analyticJob.getAppId();
     String jobId = Utils.getJobIdFromApplicationId(appId);
-    jobData.setStatus(JobStatus.State.RUNNING.name());
+    String status = analyticJob.getJobStatus();
+    jobData.setAppId(appId).setJobId(jobId).setStatus(status);
 
-    // When job is in Running state, check for all the completed tasks and compute the metrics.
-    logger.info("Job is in " + analyticJob.getJobStatus() + " state: " + appId);
-
+    logger.info("Job is in " + status + " state: " + appId);
     Job job = _cluster.getJob(JobID.forName(jobId));
     if (job == null) {
       logger.error("App " + appId + " not found. This should not happen. Please debug this issue.");
@@ -174,24 +188,28 @@ public class MapReduceFetcherHadoop2 implements ElephantFetcher<MapReduceApplica
 
     // Capture the job configuration
     Properties props = new Properties();
-    Iterator<Map.Entry<String, String>> entries = job.getConfiguration().iterator();
-    while (entries.hasNext()) {
-      Map.Entry<String, String> entry = entries.next();
-      String key = entry.getKey();
-      String value = entry.getValue();
-      props.setProperty(key, value);
+    if (job.getConfiguration() != null) {
+      Iterator<Map.Entry<String, String>> entries = job.getConfiguration().iterator();
+      while (entries.hasNext()) {
+        Map.Entry<String, String> entry = entries.next();
+        String key = entry.getKey();
+        String value = entry.getValue();
+        props.setProperty(key, value);
+      }
     }
     jobData.setJobConf(props);
 
     // Capture the job counters
     MapReduceCounterData mpCounter = new MapReduceCounterData();
-    Iterator<CounterGroup> counterGroups = job.getCounters().iterator();
-    while (counterGroups.hasNext()) {
-      CounterGroup counterGroup = counterGroups.next();
-      Iterator<Counter> counters = counterGroup.iterator();
-      while (counters.hasNext()) {
-        Counter counter = counters.next();
-        mpCounter.set(counterGroup.getName(), counter.getName(), counter.getValue());
+    if (job.getCounters() != null) {
+      Iterator<CounterGroup> counterGroups = job.getCounters().iterator();
+      while (counterGroups.hasNext()) {
+        CounterGroup counterGroup = counterGroups.next();
+        Iterator<Counter> counters = counterGroup.iterator();
+        while (counters.hasNext()) {
+          Counter counter = counters.next();
+          mpCounter.set(counterGroup.getName(), counter.getName(), counter.getValue());
+        }
       }
     }
     jobData.setCounters(mpCounter);
@@ -209,6 +227,10 @@ public class MapReduceFetcherHadoop2 implements ElephantFetcher<MapReduceApplica
 
   private List<MapReduceTaskData> getMRTaskData(List<TaskReport> taskReports, int sampleSize) {
     List<MapReduceTaskData> taskList = new ArrayList<MapReduceTaskData>();
+    if (sampleSize > taskReports.size()) {
+      return taskList;
+    }
+
     for (int i = 0; i < sampleSize; i++) {
       TaskReport taskReport = taskReports.get(i);
       if (taskReport.getCurrentStatus() == TIPStatus.COMPLETE) {
@@ -218,13 +240,15 @@ public class MapReduceFetcherHadoop2 implements ElephantFetcher<MapReduceApplica
 
         Counters taskCounters = taskReport.getTaskCounters();
         MapReduceCounterData taskCounter = new MapReduceCounterData();
-        Iterator<CounterGroup> counterGroups = taskCounters.iterator();
-        while (counterGroups.hasNext()) {
-          CounterGroup counterGroup = counterGroups.next();
-          Iterator<Counter> counters = counterGroup.iterator();
-          while (counters.hasNext()) {
-            Counter counter = counters.next();
-            taskCounter.set(counterGroup.getName(), counter.getName(), counter.getValue());
+        if (taskCounters != null) {
+          Iterator<CounterGroup> counterGroups = taskCounters.iterator();
+          while (counterGroups.hasNext()) {
+            CounterGroup counterGroup = counterGroups.next();
+            Iterator<Counter> counters = counterGroup.iterator();
+            while (counters.hasNext()) {
+              Counter counter = counters.next();
+              taskCounter.set(counterGroup.getName(), counter.getName(), counter.getValue());
+            }
           }
         }
         mrTaskData.setCounter(taskCounter);
@@ -278,11 +302,11 @@ public class MapReduceFetcherHadoop2 implements ElephantFetcher<MapReduceApplica
     return _urlFactory.getTaskAttemptURL(jobId, taskId, attemptId);
   }
 
-  private class URLFactory {
+  public class URLFactory {
 
     private String _restRoot;
 
-    private URLFactory(String hserverAddr) throws IOException {
+    public URLFactory(String hserverAddr) throws IOException {
       _restRoot = "http://" + hserverAddr + "/ws/v1/history/mapreduce/jobs";
       verifyURL(_restRoot);
     }
@@ -323,7 +347,7 @@ public class MapReduceFetcherHadoop2 implements ElephantFetcher<MapReduceApplica
     }
   }
 
-  private class JSONFactory {
+  public class JSONFactory {
 
     private long getStartTime(URL url) throws IOException, AuthenticationException {
       JsonNode rootNode = ThreadContextMR2.readJsonNode(url);
