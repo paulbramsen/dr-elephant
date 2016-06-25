@@ -144,6 +144,22 @@ public class Application extends Controller {
   }
 
   /**
+   * Returns most recent flowExecId that is like value which can use % and _ SQL wild cards.
+   */
+  private static String bestMatchForFlowExecIdLikeValue(String value) {
+    List<AppResult> matches = AppResult.find
+            .select(AppResult.TABLE.FLOW_EXEC_ID)
+            .where().like(AppResult.TABLE.FLOW_DEF_ID, value)
+            .orderBy(AppResult.TABLE.FINISH_TIME + " DESC")
+            .setMaxRows(1)
+            .findList();
+    if (matches.size() == 1) {
+      return matches.get(0).flowExecId;
+    }
+    return null;
+  }
+
+  /**
    * Controls the Search Feature
    */
   public static Result search() {
@@ -165,7 +181,24 @@ public class Application extends Controller {
           .where()
           .idEq(appId).findUnique();
       return ok(searchPage.render(null, jobDetails.render(result)));
-    } else if (flowExecId != null && !flowExecId.isEmpty()) {
+    } else if (Utils.isSet(flowExecId)) {
+      String bestFlowExecId;
+      // check for exact match
+      bestFlowExecId = bestMatchForFlowExecIdLikeValue(flowExecId);
+      // check for suffix match
+      if (bestFlowExecId == null) {
+        bestFlowExecId = bestMatchForFlowExecIdLikeValue(String.format("%s%%", flowExecId));
+      }
+      // check for prefix + suffix match
+      if (bestFlowExecId == null) {
+        bestFlowExecId = bestMatchForFlowExecIdLikeValue(String.format("%%%s%%", flowExecId));
+      }
+      // if we didn't find anything just let the next query fail
+      if (bestFlowExecId != null) {
+
+        flowExecId = bestFlowExecId;
+      }
+
       List<AppResult> results = AppResult.find
           .select(AppResult.getSearchFields() + "," + AppResult.TABLE.JOB_EXEC_ID)
           .fetch(AppResult.TABLE.APP_HEURISTIC_RESULTS, AppHeuristicResult.getSearchFields())
