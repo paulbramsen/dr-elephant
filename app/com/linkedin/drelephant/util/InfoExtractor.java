@@ -51,10 +51,6 @@ public class InfoExtractor {
 
   private static List<SchedulerConfigurationData> _schedulerConfData;
 
-  public InfoExtractor() {
-    loadSchedulers();
-  }
-
   /**
    * Load all the schedulers configured in SchedulerConf.xml
    */

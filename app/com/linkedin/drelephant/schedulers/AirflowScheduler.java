@@ -49,7 +49,11 @@ public class AirflowScheduler implements Scheduler {
 
   public AirflowScheduler(String appId, Properties properties, SchedulerConfigurationData schedulerConfData) {
     _schedulerName = schedulerConfData.getSchedulerName();
-    _baseUrl = schedulerConfData.getParamMap().getOrDefault(AIRFLOW_BASE_URL_PARAM_NAME, AIRFLOW_BASE_URL_DEFAULT);
+    _baseUrl = schedulerConfData.getParamMap().get(AIRFLOW_BASE_URL_PARAM_NAME);
+    if (_baseUrl == null) {
+      _baseUrl = AIRFLOW_BASE_URL_DEFAULT;
+    }
+
     if (properties != null) {
       loadInfo(appId, properties);
     } else {
@@ -58,10 +62,14 @@ public class AirflowScheduler implements Scheduler {
   }
 
   private void loadInfo(String appId, Properties properties) {
-    // Update the 4 Ids
+    // examples:
+    // my_amazing_task_id
     _taskId = properties.getProperty(AIRFLOW_TASK_ID);
+    // 2016-06-27T01:30:00
     _taskInstanceExecutionDate = properties.getProperty(AIRFLOW_TASK_INSTANCE_EXECUTION_DATE);
-    _dagId = properties.getProperty(AIRFLOW_DAG_ID);
+    // my_amazing_dag_id
+    _dagId = properties.getProperty(AIRFLOW_DAG_ID); //
+    // 2016-06-27T00:00:00
     _dagRunExecutionDate = properties.getProperty(AIRFLOW_DAG_RUN_EXECUTION_DATE);
 
     _subdagDepth = 0; // TODO: Add sub-dag support

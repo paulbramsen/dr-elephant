@@ -30,6 +30,9 @@ import javax.xml.parsers.ParserConfigurationException;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.log4j.Logger;
 import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 import play.Play;
 
@@ -309,5 +312,26 @@ public final class Utils {
       }
     }
     return String.format(formatString, args);
+  }
+
+  /**
+   * Given a configuration element, extract the params map.
+   *
+   * @param confElem the configuration element
+   * @return the params map or an empty map if one can't be found
+   */
+  public static Map<String, String> getConfigurationParameters(Element confElem) {
+    Map<String, String> paramsMap = new HashMap<String, String>();
+    Node paramsNode = confElem.getElementsByTagName("params").item(0);
+    if (paramsNode != null) {
+      NodeList paramsList = paramsNode.getChildNodes();
+      for (int j = 0; j < paramsList.getLength(); j++) {
+        Node paramNode = paramsList.item(j);
+        if (paramNode != null && !paramsMap.containsKey(paramNode.getNodeName())) {
+          paramsMap.put(paramNode.getNodeName(), paramNode.getTextContent());
+        }
+      }
+    }
+    return paramsMap;
   }
 }

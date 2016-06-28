@@ -1,6 +1,24 @@
+/*
+ * Copyright 2016 LinkedIn Corp.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
+
+
 package com.linkedin.drelephant.configurations.scheduler;
 
-import org.apache.log4j.Logger;
+import com.linkedin.drelephant.util.Utils;
+
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
@@ -34,10 +52,10 @@ public class SchedulerConfiguration {
       Node node = nodes.item(i);
       if (node.getNodeType() == Node.ELEMENT_NODE) {
         n++;
-        Element schedulerNode = (Element) node;
+        Element schedulerElem = (Element) node;
 
         String className;
-        Node classNameNode = schedulerNode.getElementsByTagName("classname").item(0);
+        Node classNameNode = schedulerElem.getElementsByTagName("classname").item(0);
         if (classNameNode == null) {
           throw new RuntimeException("No tag 'classname' in scheduler " + n);
         }
@@ -47,7 +65,7 @@ public class SchedulerConfiguration {
         }
 
         String schedulerName;
-        Node schedulerNameNode = schedulerNode.getElementsByTagName("name").item(0);
+        Node schedulerNameNode = schedulerElem.getElementsByTagName("name").item(0);
         if (schedulerNameNode == null) {
           throw new RuntimeException("No tag 'name' in scheduler " + n + " classname " + className);
         }
@@ -57,17 +75,7 @@ public class SchedulerConfiguration {
         }
 
         // Check if parameters are defined for the scheduler
-        Map<String, String> paramsMap = new HashMap<String, String>();
-        Node paramsNode = schedulerNode.getElementsByTagName("params").item(0);
-        if (paramsNode != null) {
-          NodeList paramsList = paramsNode.getChildNodes();
-          for (int j = 0; j < paramsList.getLength(); j++) {
-            Node paramNode = paramsList.item(j);
-            if (paramNode != null && !paramsMap.containsKey(paramNode.getNodeName())) {
-              paramsMap.put(paramNode.getNodeName(), paramNode.getTextContent());
-            }
-          }
-        }
+        Map<String, String> paramsMap = Utils.getConfigurationParameters(schedulerElem);
 
         SchedulerConfigurationData schedulerData = new SchedulerConfigurationData(schedulerName, className, paramsMap);
         _schedulerConfDataList.add(schedulerData);
