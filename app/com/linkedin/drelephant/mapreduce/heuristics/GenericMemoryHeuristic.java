@@ -39,11 +39,12 @@ import org.apache.log4j.Logger;
  */
 public abstract class GenericMemoryHeuristic implements Heuristic<MapReduceApplicationData> {
   private static final Logger logger = Logger.getLogger(GenericMemoryHeuristic.class);
-  private static final long CONTAINER_MEMORY_DEFAULT_BYTES = 2048L * FileUtils.ONE_MB;
+  private static final long CONTAINER_MEMORY_DEFAULT_BYTES_DEFAULT = 2048L * FileUtils.ONE_MB;
 
   // Severity Parameters
   private static final String MEM_RATIO_SEVERITY = "memory_ratio_severity";
   private static final String CONTAINER_MEM_SEVERITY = "container_memory_severity";
+  private static final String CONTAINER_MEM_DEFAULT_MB = "container_memory_default_mb";
 
   // Default value of parameters
   private double[] memRatioLimits = {0.6d, 0.5d, 0.4d, 0.3d}; // Avg Physical Mem of Tasks / Container Mem
@@ -63,6 +64,13 @@ public abstract class GenericMemoryHeuristic implements Heuristic<MapReduceAppli
     logger.info(heuristicName + " will use " + MEM_RATIO_SEVERITY + " with the following threshold settings: "
         + Arrays.toString(memRatioLimits));
 
+    long containerMemDefaultBytes = CONTAINER_MEMORY_DEFAULT_BYTES_DEFAULT;
+    if (paramMap.containsKey(CONTAINER_MEM_DEFAULT_MB)) {
+      containerMemDefaultBytes = Long.valueOf(paramMap.get(CONTAINER_MEM_DEFAULT_MB)) * FileUtils.ONE_MB;
+    }
+    logger.info(heuristicName + " will use " + CONTAINER_MEM_DEFAULT_MB + " with the following setting: "
+            + containerMemDefaultBytes);
+
     double[] confMemoryLimits = Utils.getParam(paramMap.get(CONTAINER_MEM_SEVERITY), memoryLimits.length);
     if (confMemoryLimits != null) {
       memoryLimits = confMemoryLimits;
@@ -70,7 +78,7 @@ public abstract class GenericMemoryHeuristic implements Heuristic<MapReduceAppli
     logger.info(heuristicName + " will use " + CONTAINER_MEM_SEVERITY + " with the following threshold settings: "
         + Arrays.toString(memoryLimits));
     for (int i = 0; i < memoryLimits.length; i++) {
-      memoryLimits[i] = memoryLimits[i] * CONTAINER_MEMORY_DEFAULT_BYTES;
+      memoryLimits[i] = memoryLimits[i] * containerMemDefaultBytes;
     }
   }
 
