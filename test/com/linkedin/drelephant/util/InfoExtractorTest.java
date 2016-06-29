@@ -79,7 +79,7 @@ public class InfoExtractorTest {
     assertEquals("airflow_dag_id", scheduler.getFlowDefId());
     assertEquals("airflow_dag_id/airflow_dag_run_execution_date", scheduler.getFlowExecId());
     assertEquals("airflow_dag_id/airflow_task_id", scheduler.getJobDefId());
-    assertEquals("airflow_dag_id/airflow_task_id/airflow_task_instance_execution_date", scheduler.getJobExecId());
+    assertEquals("airflow_dag_id/airflow_dag_run_execution_date/airflow_task_id/airflow_task_instance_execution_date", scheduler.getJobExecId());
     assertEquals("airflow_task_id", scheduler.getJobName());
     assertEquals("airflow", scheduler.getSchedulerName());
   }

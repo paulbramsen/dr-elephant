@@ -30,7 +30,7 @@ public class AirflowSchedulerTest {
     assertEquals("http://localhost:1717/admin/airflow/code?dag_id=dag_id&task_id=task_id", airScheduler.getJobDefUrl());
     assertEquals("dag_id/task_id", airScheduler.getJobDefId());
     assertEquals("http://localhost:1717/admin/airflow/log?dag_id=dag_id&task_id=task_id&execution_date=task_instance_execution_date", airScheduler.getJobExecUrl());
-    assertEquals("dag_id/task_id/task_instance_execution_date", airScheduler.getJobExecId());
+    assertEquals("dag_id/dag_run_execution_date/task_id/task_instance_execution_date", airScheduler.getJobExecId());
 
     assertEquals("task_id", airScheduler.getJobName());
     assertEquals(0, airScheduler.getWorkflowDepth());

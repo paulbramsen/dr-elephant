@@ -92,7 +92,7 @@ public class AirflowScheduler implements Scheduler {
 
   @Override
   public String getJobExecId() {
-    return Utils.formatStringOrNull("%s/%s/%s", _dagId, _taskId, _taskInstanceExecutionDate);
+    return Utils.formatStringOrNull("%s/%s/%s/%s", _dagId, _dagRunExecutionDate, _taskId, _taskInstanceExecutionDate);
   }
 
   @Override
