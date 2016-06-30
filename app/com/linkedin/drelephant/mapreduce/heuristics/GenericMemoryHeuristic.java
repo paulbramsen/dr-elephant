@@ -68,7 +68,7 @@ public abstract class GenericMemoryHeuristic implements Heuristic<MapReduceAppli
     if (paramMap.containsKey(CONTAINER_MEM_DEFAULT_MB)) {
       containerMemDefaultBytes = Long.valueOf(paramMap.get(CONTAINER_MEM_DEFAULT_MB)) * FileUtils.ONE_MB;
     }
-    logger.info(heuristicName + " will use " + CONTAINER_MEM_DEFAULT_MB + " with the following setting: "
+    logger.info(heuristicName + " will use " + CONTAINER_MEM_DEFAULT_MB + " with the following threshold setting: "
             + containerMemDefaultBytes);
 
     double[] confMemoryLimits = Utils.getParam(paramMap.get(CONTAINER_MEM_SEVERITY), memoryLimits.length);
