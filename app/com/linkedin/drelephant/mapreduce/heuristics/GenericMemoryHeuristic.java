@@ -39,7 +39,7 @@ import org.apache.log4j.Logger;
  */
 public abstract class GenericMemoryHeuristic implements Heuristic<MapReduceApplicationData> {
   private static final Logger logger = Logger.getLogger(GenericMemoryHeuristic.class);
-  private static final long CONTAINER_MEMORY_DEFAULT_BYTES_DEFAULT = 2048L * FileUtils.ONE_MB;
+  private static final long CONTAINER_MEMORY_DEFAULT_BYTES = 2048L * FileUtils.ONE_MB;
 
   // Severity Parameters
   private static final String MEM_RATIO_SEVERITY = "memory_ratio_severity";
@@ -64,7 +64,7 @@ public abstract class GenericMemoryHeuristic implements Heuristic<MapReduceAppli
     logger.info(heuristicName + " will use " + MEM_RATIO_SEVERITY + " with the following threshold settings: "
         + Arrays.toString(memRatioLimits));
 
-    long containerMemDefaultBytes = CONTAINER_MEMORY_DEFAULT_BYTES_DEFAULT;
+    long containerMemDefaultBytes = CONTAINER_MEMORY_DEFAULT_BYTES;
     if (paramMap.containsKey(CONTAINER_MEM_DEFAULT_MB)) {
       containerMemDefaultBytes = Long.valueOf(paramMap.get(CONTAINER_MEM_DEFAULT_MB)) * FileUtils.ONE_MB;
     }
