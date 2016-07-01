@@ -36,7 +36,7 @@ import static org.junit.Assert.assertTrue;
 public class ElephantRunnerTest {
 
   @Test
-  public void testRetryAndDrop() {
+  public void testRetryOrDrop() {
     final AnalyticJob analyticJob = new AnalyticJob();
     ElephantRunner elephantRunner = new ElephantRunner();
 
@@ -47,7 +47,7 @@ public class ElephantRunnerTest {
       }
     };
 
-    Deencapsulation.invoke(elephantRunner, "retryAndDrop", analyticJob);
+    Deencapsulation.invoke(elephantRunner, "retryOrDrop", analyticJob);
     assertEquals(1, analyticJob.getRetries());
   }
 

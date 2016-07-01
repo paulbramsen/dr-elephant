@@ -92,7 +92,7 @@ public class MapReduceFetcherHadoop2 implements ElephantFetcher<MapReduceApplica
     } else if (analyticJob.getJobStatus().equals("RUNNING")) {
       jobData = fetchRunningJobsData(analyticJob);
     } else {
-      // Dr. Elephant doesn't support states other than SUCCEEDED, FAILED and UNDEFINED. Code shouldn't reach here.
+      // Dr. Elephant doesn't support states other than SUCCEEDED, FAILED and RUNNING. Code shouldn't reach here.
       throw new RuntimeException(appId + " is in " + analyticJob.getJobStatus() + " state which is not supported.");
     }
 

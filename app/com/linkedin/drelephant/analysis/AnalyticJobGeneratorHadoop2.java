@@ -236,10 +236,7 @@ public class AnalyticJobGeneratorHadoop2 implements AnalyticJobGenerator {
     List<AnalyticJob> appList = new ArrayList<AnalyticJob>();
     for (JsonNode app : apps) {
       String appId = app.get("id").getValueAsText();
-      if (lastTime > 0 || (lastTime == 0 && AppResult.find.byId(appId) == null) ||
-          (lastTime == 0 && !AppResult.find.select("id").where().eq(AppResult.TABLE.ID, appId)
-              .ne(AppResult.TABLE.STATUS, JobStatus.State.SUCCEEDED)
-              .ne(AppResult.TABLE.STATUS, JobStatus.State.FAILED).findList().isEmpty())) {
+      if (!isFirstFetch() || !isAppAnalyzed(appId)) {
         String user = app.get("user").getValueAsText();
         String name = app.get("name").getValueAsText();
         String queueName = app.get("queue").getValueAsText();
@@ -262,5 +259,33 @@ public class AnalyticJobGeneratorHadoop2 implements AnalyticJobGenerator {
       }
     }
     return appList;
+  }
+
+  /**
+   * Check if this is the first time Dr. Elephant is fetching after a restart.
+   * @return true, if first time after restart. false, otherwise
+   */
+  private boolean isFirstFetch() {
+    return _lastTime == 0;
+  }
+
+  /**
+   * Check if there are any applications in non-complete state in the database due to the previous run
+   * @param appId
+   * @return true, if database contains a record with status != SUCCEEDED and status != FAILED, false otherwise
+   */
+  private boolean isAppInIncompleteState(String appId) {
+    return !AppResult.find.select("id").where().eq(AppResult.TABLE.ID, appId)
+        .ne(AppResult.TABLE.STATUS, JobStatus.State.SUCCEEDED)
+        .ne(AppResult.TABLE.STATUS, JobStatus.State.FAILED).findList().isEmpty();
+  }
+
+  /**
+   * An application is not analyzed if it is not in the database or it is in an incomplete state
+   * @param appId
+   * @return
+   */
+  private boolean isAppAnalyzed(String appId) {
+    return !(AppResult.find.byId(appId) == null || isAppInIncompleteState(appId));
   }
 }

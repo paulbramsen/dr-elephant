@@ -49,8 +49,8 @@ public class ElephantRunner implements Runnable {
   private static final Logger logger = Logger.getLogger(ElephantRunner.class);
 
   private static final String SPARK_APP_TYPE = "spark";
-  private static final String RUNNING_JOB_POOL_SIZE_KEY = "drelephant.analysis.completed.thread.count";
-  private static final String COMPLETED_JOB_POOL_SIZE_KEY = "drelephant.analysis.realtime.thread.count";
+  private static final String RUNNING_JOB_POOL_SIZE_KEY = "drelephant.analysis.realtime.thread.count";
+  private static final String COMPLETED_JOB_POOL_SIZE_KEY = "drelephant.analysis.completed.thread.count";
   private static final String FETCH_INTERVAL_KEY = "drelephant.analysis.fetch.interval";
   private static final String FETCH_LAG_KEY = "drelephant.analysis.fetch.lag";
   private static final String RUNNING_JOB_UPDATE_INTERVAL_KEY = "drelephant.analysis.realtime.update.interval";
@@ -124,7 +124,7 @@ public class ElephantRunner implements Runnable {
           return null;
         }
       });
-    } catch (IOException e) {
+    } catch (Exception e) {
       logger.error(e.getMessage());
       logger.error(ExceptionUtils.getStackTrace(e));
       _completedJobPool.shutdown();
@@ -296,7 +296,7 @@ public class ElephantRunner implements Runnable {
         } catch (Exception e) {
           logger.error(e.getMessage());
           logger.error(ExceptionUtils.getStackTrace(e));
-          retryAndDrop(analyticJob);
+          retryOrDrop(analyticJob);
         }
       }
       logger.info("Executor Thread" + _threadId + " for completed jobs is terminated.");
@@ -351,7 +351,7 @@ public class ElephantRunner implements Runnable {
         } catch (Exception e) {
           logger.error(e.getMessage());
           logger.error(ExceptionUtils.getStackTrace(e));
-          retryAndDrop(analyticJob);
+          retryOrDrop(analyticJob);
         }
       } logger.info("Running Executor Thread" + _threadId + " is terminated.");
     }
@@ -399,7 +399,7 @@ public class ElephantRunner implements Runnable {
    *
    * @param analyticJob the job being analyzed
    */
-  private void retryAndDrop(AnalyticJob analyticJob) {
+  private void retryOrDrop(AnalyticJob analyticJob) {
     if (analyticJob != null && analyticJob.retry()) {
       logger.error("Add analytic job id [" + analyticJob.getAppId() + "] into the retry list.");
       _analyticJobGenerator.addIntoRetries(analyticJob);
@@ -446,10 +446,9 @@ public class ElephantRunner implements Runnable {
   }
 
   public boolean isKilled() {
-    boolean killed = true;
     if (_completedJobPool != null && _undefinedJobPool != null) {
       return !_running.get() && _completedJobPool.isShutdown() && _undefinedJobPool.isShutdown();
     }
-    return killed;
+    return true;
   }
 }
