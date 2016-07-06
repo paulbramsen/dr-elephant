@@ -413,7 +413,7 @@ public class Application extends Controller {
     DynamicForm form = Form.form().bindFromRequest(request());
     String flowDefId = form.get(FLOW_DEF_ID);
     flowDefId = (flowDefId != null) ? flowDefId.trim() : null;
-    if (flowDefId == null || flowDefId.isEmpty()) {
+    if (!Utils.isSet(flowDefId)) {
       return ok(flowHistoryPage.render(flowHistoryResults.render(null, null, null, null)));
     }
 
@@ -430,6 +430,7 @@ public class Application extends Controller {
     if (results.size() == 0) {
       return notFound("Unable to find record on flow url: " + flowDefId);
     }
+    IdUrlPair flowDefPair = new IdUrlPair(flowDefId, results.get(0).flowDefUrl);
     Map<IdUrlPair, List<AppResult>> flowExecIdToJobsMap =  limitHistoryResults(
         groupJobs(results, GroupBy.FLOW_EXECUTION_ID), results.size(), MAX_HISTORY_LIMIT);
 
@@ -459,7 +460,7 @@ public class Application extends Controller {
       idPairToJobNameMap.put(entry.getKey(), filteredMap.get(entry.getKey()).get(0).jobName);
     }
 
-    return ok(flowHistoryPage.render(flowHistoryResults.render(flowDefId, executionMap, idPairToJobNameMap,
+    return ok(flowHistoryPage.render(flowHistoryResults.render(flowDefPair, executionMap, idPairToJobNameMap,
         flowExecTimeList)));
   }
 
@@ -470,7 +471,7 @@ public class Application extends Controller {
     DynamicForm form = Form.form().bindFromRequest(request());
     String jobDefId = form.get(JOB_DEF_ID);
     jobDefId = (jobDefId != null) ? jobDefId.trim() : null;
-    if (jobDefId == null || jobDefId.isEmpty()) {
+    if (!Utils.isSet(jobDefId)) {
       return ok(jobHistoryPage.render(jobHistoryResults.render(null, null, -1, null)));
     }
 
@@ -485,6 +486,7 @@ public class Application extends Controller {
     if (results.size() == 0) {
       return notFound("Unable to find record on job url: " + jobDefId);
     }
+    IdUrlPair jobDefPair = new IdUrlPair(jobDefId, results.get(0).jobDefUrl);
     Map<IdUrlPair, List<AppResult>> flowExecIdToJobsMap =
         limitHistoryResults(groupJobs(results, GroupBy.FLOW_EXECUTION_ID), results.size(), MAX_HISTORY_LIMIT);
 
@@ -513,7 +515,7 @@ public class Application extends Controller {
       maxStages = STAGE_LIMIT;
     }
 
-    return ok(jobHistoryPage.render(jobHistoryResults.render(jobDefId, executionMap, maxStages, flowExecTimeList)));
+    return ok(jobHistoryPage.render(jobHistoryResults.render(jobDefPair, executionMap, maxStages, flowExecTimeList)));
   }
 
   /**
