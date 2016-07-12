@@ -147,14 +147,15 @@ public class Application extends Controller {
    * Returns most recent flowExecId that is like value which can use % and _ SQL wild cards.
    */
   private static String bestMatchForFlowExecIdLikeValue(String value) {
-    List<AppResult> matches = AppResult.find
+    AppResult result = AppResult.find
             .select(AppResult.TABLE.FLOW_EXEC_ID)
             .where().like(AppResult.TABLE.FLOW_DEF_ID, value)
-            .orderBy(AppResult.TABLE.FINISH_TIME + " DESC")
+            .order()
+            .desc(AppResult.TABLE.FINISH_TIME)
             .setMaxRows(1)
-            .findList();
-    if (matches.size() == 1) {
-      return matches.get(0).flowExecId;
+            .findUnique();
+    if (result != null) {
+      return result.flowExecId;
     }
     return null;
   }
