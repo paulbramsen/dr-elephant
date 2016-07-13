@@ -149,7 +149,7 @@ public class Application extends Controller {
   private static String bestMatchForFlowExecIdLikeValue(String value) {
     AppResult result = AppResult.find
             .select(AppResult.TABLE.FLOW_EXEC_ID)
-            .where().like(AppResult.TABLE.FLOW_DEF_ID, value)
+            .where().like(AppResult.TABLE.FLOW_EXEC_ID, value)
             .order()
             .desc(AppResult.TABLE.FINISH_TIME)
             .setMaxRows(1)
