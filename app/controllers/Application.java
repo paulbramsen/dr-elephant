@@ -141,21 +141,16 @@ public class Application extends Controller {
    */
   private static IdUrlPair bestSchedulerInfoMatchLikeValue(String value, String schedulerIdField) {
     String schedulerUrlField;
-    switch (schedulerIdField) {
-      case AppResult.TABLE.FLOW_DEF_ID:
-        schedulerUrlField = AppResult.TABLE.FLOW_DEF_URL;
-        break;
-      case AppResult.TABLE.FLOW_EXEC_ID:
-        schedulerUrlField = AppResult.TABLE.FLOW_EXEC_URL;
-        break;
-      case AppResult.TABLE.JOB_DEF_ID:
-        schedulerUrlField = AppResult.TABLE.JOB_DEF_URL;
-        break;
-      case AppResult.TABLE.JOB_EXEC_ID:
-        schedulerUrlField = AppResult.TABLE.JOB_EXEC_URL;
-        break;
-      default:
-        throw new RuntimeException(String.format("%s is not a valid scheduler info id field", schedulerIdField));
+    if (schedulerIdField.equals(AppResult.TABLE.FLOW_DEF_ID)) {
+      schedulerUrlField = AppResult.TABLE.FLOW_DEF_URL;
+    } else if (schedulerIdField.equals(AppResult.TABLE.FLOW_EXEC_ID)) {
+      schedulerUrlField = AppResult.TABLE.FLOW_EXEC_URL;
+    } else if (schedulerIdField.equals(AppResult.TABLE.JOB_DEF_ID)) {
+      schedulerUrlField = AppResult.TABLE.JOB_DEF_URL;
+    } else if (schedulerIdField.equals(AppResult.TABLE.JOB_EXEC_ID)) {
+      schedulerUrlField = AppResult.TABLE.JOB_EXEC_URL;
+    } else {
+      throw new RuntimeException(String.format("%s is not a valid scheduler info id field", schedulerIdField));
     }
     AppResult result = AppResult.find
             .select(String.format("%s, %s", schedulerIdField, schedulerUrlField))
@@ -164,15 +159,14 @@ public class Application extends Controller {
             .setMaxRows(1)
             .findUnique();
     if (result != null) {
-      switch (schedulerIdField) {
-        case AppResult.TABLE.FLOW_DEF_ID:
-          return new IdUrlPair(result.flowDefId, result.flowDefUrl);
-        case AppResult.TABLE.FLOW_EXEC_ID:
-          return new IdUrlPair(result.flowExecId, result.flowExecUrl);
-        case AppResult.TABLE.JOB_DEF_ID:
-          return new IdUrlPair(result.jobDefId, result.jobDefUrl);
-        case AppResult.TABLE.JOB_EXEC_ID:
-          return new IdUrlPair(result.jobExecId, result.jobExecUrl);
+      if (schedulerIdField.equals(AppResult.TABLE.FLOW_DEF_ID)) {
+        return new IdUrlPair(result.flowDefId, result.flowDefUrl);
+      } else if (schedulerIdField.equals(AppResult.TABLE.FLOW_EXEC_ID)) {
+        return new IdUrlPair(result.flowExecId, result.flowExecUrl);
+      } else if (schedulerIdField.equals(AppResult.TABLE.JOB_DEF_ID)) {
+        return new IdUrlPair(result.jobDefId, result.jobDefUrl);
+      } else if (schedulerIdField.equals(AppResult.TABLE.JOB_EXEC_ID)) {
+        return new IdUrlPair(result.jobExecId, result.jobExecUrl);
       }
     }
     return null;
