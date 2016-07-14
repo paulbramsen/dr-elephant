@@ -18,23 +18,15 @@ package controllers;
 
 import com.avaje.ebean.ExpressionList;
 import com.avaje.ebean.Query;
-import com.fasterxml.jackson.core.JsonGenerationException;
-import com.fasterxml.jackson.databind.JsonMappingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import com.linkedin.drelephant.ElephantContext;
 import com.linkedin.drelephant.analysis.Severity;
-import com.linkedin.drelephant.configurations.heuristic.HeuristicConfigurationData;
 import com.linkedin.drelephant.util.Utils;
 
-import java.io.File;
-import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
@@ -47,7 +39,7 @@ import models.AppResult;
 import org.apache.http.client.utils.URLEncodedUtils;
 import org.apache.http.message.BasicNameValuePair;
 import org.apache.log4j.Logger;
-import play.api.Play;
+
 import play.api.templates.Html;
 import play.data.DynamicForm;
 import play.data.Form;
@@ -144,20 +136,68 @@ public class Application extends Controller {
   }
 
   /**
-   * Returns most recent flowExecId that is like value which can use % and _ SQL wild cards.
+   * Returns the scheduler info id/url pair for the most recent app result that has an id like value
+   * (which can use % and _ SQL wild cards) for the specified field.
    */
-  private static String bestMatchForFlowExecIdLikeValue(String value) {
+  private static IdUrlPair bestSchedulerInfoMatchLikeValue(String value, String schedulerIdField) {
+    String schedulerUrlField;
+    switch (schedulerIdField) {
+      case AppResult.TABLE.FLOW_DEF_ID:
+        schedulerUrlField = AppResult.TABLE.FLOW_DEF_URL;
+        break;
+      case AppResult.TABLE.FLOW_EXEC_ID:
+        schedulerUrlField = AppResult.TABLE.FLOW_EXEC_URL;
+        break;
+      case AppResult.TABLE.JOB_DEF_ID:
+        schedulerUrlField = AppResult.TABLE.JOB_DEF_URL;
+        break;
+      case AppResult.TABLE.JOB_EXEC_ID:
+        schedulerUrlField = AppResult.TABLE.JOB_EXEC_URL;
+        break;
+      default:
+        throw new RuntimeException(String.format("%s is not a valid scheduler info id field", schedulerIdField));
+    }
     AppResult result = AppResult.find
-            .select(AppResult.TABLE.FLOW_EXEC_ID)
-            .where().like(AppResult.TABLE.FLOW_DEF_ID, value)
-            .order()
-            .desc(AppResult.TABLE.FINISH_TIME)
+            .select(String.format("%s, %s", schedulerIdField, schedulerUrlField))
+            .where().like(schedulerIdField, value)
+            .orderBy(AppResult.TABLE.FINISH_TIME + " DESC")
             .setMaxRows(1)
             .findUnique();
     if (result != null) {
-      return result.flowExecId;
+      switch (schedulerIdField) {
+        case AppResult.TABLE.FLOW_DEF_ID:
+          return new IdUrlPair(result.flowDefId, result.flowDefUrl);
+        case AppResult.TABLE.FLOW_EXEC_ID:
+          return new IdUrlPair(result.flowExecId, result.flowExecUrl);
+        case AppResult.TABLE.JOB_DEF_ID:
+          return new IdUrlPair(result.jobDefId, result.jobDefUrl);
+        case AppResult.TABLE.JOB_EXEC_ID:
+          return new IdUrlPair(result.jobExecId, result.jobExecUrl);
+      }
     }
     return null;
+  }
+
+  /**
+   * Given a (possibly) partial scheduler info id, try to find the closest existing id.
+   */
+  private static IdUrlPair bestSchedulerInfoMatchGivenPartialId(String partialSchedulerInfoId, String schedulerInfoIdField) {
+    IdUrlPair schedulerInfoPair;
+    // check for exact match
+    schedulerInfoPair = bestSchedulerInfoMatchLikeValue(partialSchedulerInfoId, schedulerInfoIdField);
+    // check for suffix match
+    if (schedulerInfoPair == null) {
+      schedulerInfoPair = bestSchedulerInfoMatchLikeValue(String.format("%s%%", partialSchedulerInfoId), schedulerInfoIdField);
+    }
+    // check for prefix + suffix match
+    if (schedulerInfoPair == null) {
+      schedulerInfoPair = bestSchedulerInfoMatchLikeValue(String.format("%%%s%%", partialSchedulerInfoId), schedulerInfoIdField);
+    }
+    // if we didn't find anything just give a buest guess
+    if (schedulerInfoPair == null) {
+      schedulerInfoPair = new IdUrlPair(partialSchedulerInfoId, "");
+    }
+    return schedulerInfoPair;
   }
 
   /**
@@ -183,22 +223,7 @@ public class Application extends Controller {
           .idEq(appId).findUnique();
       return ok(searchPage.render(null, jobDetails.render(result)));
     } else if (Utils.isSet(flowExecId)) {
-      String bestFlowExecId;
-      // check for exact match
-      bestFlowExecId = bestMatchForFlowExecIdLikeValue(flowExecId);
-      // check for suffix match
-      if (bestFlowExecId == null) {
-        bestFlowExecId = bestMatchForFlowExecIdLikeValue(String.format("%s%%", flowExecId));
-      }
-      // check for prefix + suffix match
-      if (bestFlowExecId == null) {
-        bestFlowExecId = bestMatchForFlowExecIdLikeValue(String.format("%%%s%%", flowExecId));
-      }
-      // if we didn't find anything just let the next query fail
-      if (bestFlowExecId != null) {
-        flowExecId = bestFlowExecId;
-      }
-
+      IdUrlPair flowExecPair = bestSchedulerInfoMatchGivenPartialId(flowExecId, AppResult.TABLE.FLOW_EXEC_ID);
       List<AppResult> results = AppResult.find
           .select(AppResult.getSearchFields() + "," + AppResult.TABLE.JOB_EXEC_ID)
           .fetch(AppResult.TABLE.APP_HEURISTIC_RESULTS, AppHeuristicResult.getSearchFields())
@@ -366,25 +391,27 @@ public class Application extends Controller {
    */
   public static Result compare() {
     DynamicForm form = Form.form().bindFromRequest(request());
-    String flowExecId1 = form.get(COMPARE_FLOW_ID1);
-    flowExecId1 = (flowExecId1 != null) ? flowExecId1.trim() : null;
-    String flowExecId2 = form.get(COMPARE_FLOW_ID2);
-    flowExecId2 = (flowExecId2 != null) ? flowExecId2.trim() : null;
+    String partialFlowExecId1 = form.get(COMPARE_FLOW_ID1);
+    partialFlowExecId1 = (partialFlowExecId1 != null) ? partialFlowExecId1.trim() : null;
+    String partialFlowExecId2 = form.get(COMPARE_FLOW_ID2);
+    partialFlowExecId2 = (partialFlowExecId2 != null) ? partialFlowExecId2.trim() : null;
 
     List<AppResult> results1 = null;
     List<AppResult> results2 = null;
-    if (flowExecId1 != null && !flowExecId1.isEmpty() && flowExecId2 != null && !flowExecId2.isEmpty()) {
+    if (partialFlowExecId1 != null && !partialFlowExecId1.isEmpty() && partialFlowExecId2 != null && !partialFlowExecId2.isEmpty()) {
+      IdUrlPair flowExecIdPair1 = bestSchedulerInfoMatchGivenPartialId(partialFlowExecId1, AppResult.TABLE.FLOW_EXEC_ID);
+      IdUrlPair flowExecIdPair2 = bestSchedulerInfoMatchGivenPartialId(partialFlowExecId2, AppResult.TABLE.FLOW_EXEC_ID);
       results1 = AppResult.find
           .select(AppResult.getSearchFields() + "," + AppResult.TABLE.JOB_DEF_ID + "," + AppResult.TABLE.JOB_DEF_URL
               + "," + AppResult.TABLE.FLOW_EXEC_ID + "," + AppResult.TABLE.FLOW_EXEC_URL)
-          .where().eq(AppResult.TABLE.FLOW_EXEC_ID, flowExecId1).setMaxRows(100)
+          .where().eq(AppResult.TABLE.FLOW_EXEC_ID, flowExecIdPair1.getId()).setMaxRows(100)
           .fetch(AppResult.TABLE.APP_HEURISTIC_RESULTS, AppHeuristicResult.getSearchFields())
           .findList();
       results2 = AppResult.find
           .select(
               AppResult.getSearchFields() + "," + AppResult.TABLE.JOB_DEF_ID + "," + AppResult.TABLE.JOB_DEF_URL + ","
                   + AppResult.TABLE.FLOW_EXEC_ID + "," + AppResult.TABLE.FLOW_EXEC_URL)
-          .where().eq(AppResult.TABLE.FLOW_EXEC_ID, flowExecId2).setMaxRows(100)
+          .where().eq(AppResult.TABLE.FLOW_EXEC_ID, flowExecIdPair2.getId()).setMaxRows(100)
           .fetch(AppResult.TABLE.APP_HEURISTIC_RESULTS, AppHeuristicResult.getSearchFields())
           .findList();
     }
@@ -444,24 +471,25 @@ public class Application extends Controller {
    */
   public static Result flowHistory() {
     DynamicForm form = Form.form().bindFromRequest(request());
-    String flowDefId = form.get(FLOW_DEF_ID);
-    flowDefId = (flowDefId != null) ? flowDefId.trim() : null;
-    if (flowDefId == null || flowDefId.isEmpty()) {
+    String partialFlowDefId = form.get(FLOW_DEF_ID);
+    partialFlowDefId = (partialFlowDefId != null) ? partialFlowDefId.trim() : null;
+    if (!Utils.isSet(partialFlowDefId)) {
       return ok(flowHistoryPage.render(flowHistoryResults.render(null, null, null, null)));
     }
 
+    IdUrlPair flowDefPair = bestSchedulerInfoMatchGivenPartialId(partialFlowDefId, AppResult.TABLE.FLOW_DEF_ID);
     // Fetch available flow executions with latest JOB_HISTORY_LIMIT mr jobs.
     List<AppResult> results = AppResult.find
         .select(
             AppResult.getSearchFields() + "," + AppResult.TABLE.FLOW_EXEC_ID + "," + AppResult.TABLE.FLOW_EXEC_URL + ","
                 + AppResult.TABLE.JOB_DEF_ID + "," + AppResult.TABLE.JOB_DEF_URL + "," + AppResult.TABLE.JOB_NAME)
-        .where().eq(AppResult.TABLE.FLOW_DEF_ID, flowDefId)
+        .where().eq(AppResult.TABLE.FLOW_DEF_ID, flowDefPair.getId())
         .order().desc(AppResult.TABLE.FINISH_TIME)
         .setMaxRows(JOB_HISTORY_LIMIT)
         .fetch(AppResult.TABLE.APP_HEURISTIC_RESULTS, AppHeuristicResult.getSearchFields())
         .findList();
     if (results.size() == 0) {
-      return notFound("Unable to find record on flow url: " + flowDefId);
+      return notFound("Unable to find record on dag id: " + flowDefPair.getId());
     }
     Map<IdUrlPair, List<AppResult>> flowExecIdToJobsMap =  limitHistoryResults(
         groupJobs(results, GroupBy.FLOW_EXECUTION_ID), results.size(), MAX_HISTORY_LIMIT);
@@ -492,7 +520,7 @@ public class Application extends Controller {
       idPairToJobNameMap.put(entry.getKey(), filteredMap.get(entry.getKey()).get(0).jobName);
     }
 
-    return ok(flowHistoryPage.render(flowHistoryResults.render(flowDefId, executionMap, idPairToJobNameMap,
+    return ok(flowHistoryPage.render(flowHistoryResults.render(flowDefPair.getId(), executionMap, idPairToJobNameMap,
         flowExecTimeList)));
   }
 
@@ -501,22 +529,23 @@ public class Application extends Controller {
    */
   public static Result jobHistory() {
     DynamicForm form = Form.form().bindFromRequest(request());
-    String jobDefId = form.get(JOB_DEF_ID);
-    jobDefId = (jobDefId != null) ? jobDefId.trim() : null;
-    if (jobDefId == null || jobDefId.isEmpty()) {
+    String partialJobDefId = form.get(JOB_DEF_ID);
+    partialJobDefId = (partialJobDefId != null) ? partialJobDefId.trim() : null;
+    if (!Utils.isSet(partialJobDefId)) {
       return ok(jobHistoryPage.render(jobHistoryResults.render(null, null, -1, null)));
     }
+    IdUrlPair jobDefPair = bestSchedulerInfoMatchGivenPartialId(partialJobDefId, AppResult.TABLE.JOB_DEF_ID);
 
     // Fetch all job executions
     List<AppResult> results = AppResult.find
         .select(AppResult.getSearchFields() + "," + AppResult.TABLE.FLOW_EXEC_ID + "," + AppResult.TABLE.FLOW_EXEC_URL)
-        .where().eq(AppResult.TABLE.JOB_DEF_ID, jobDefId)
+        .where().eq(AppResult.TABLE.JOB_DEF_ID, jobDefPair.getId())
         .order().desc(AppResult.TABLE.FINISH_TIME).setMaxRows(JOB_HISTORY_LIMIT)
         .fetch(AppResult.TABLE.APP_HEURISTIC_RESULTS, "*")
         .fetch(AppResult.TABLE.APP_HEURISTIC_RESULTS + "." + AppHeuristicResult.TABLE.APP_HEURISTIC_RESULT_DETAILS, "*")
         .findList();
     if (results.size() == 0) {
-      return notFound("Unable to find record on job url: " + jobDefId);
+      return notFound("Unable to find record on task id: " + jobDefPair.getId());
     }
     Map<IdUrlPair, List<AppResult>> flowExecIdToJobsMap =
         limitHistoryResults(groupJobs(results, GroupBy.FLOW_EXECUTION_ID), results.size(), MAX_HISTORY_LIMIT);
@@ -546,7 +575,7 @@ public class Application extends Controller {
       maxStages = STAGE_LIMIT;
     }
 
-    return ok(jobHistoryPage.render(jobHistoryResults.render(jobDefId, executionMap, maxStages, flowExecTimeList)));
+    return ok(jobHistoryPage.render(jobHistoryResults.render(jobDefPair.getId(), executionMap, maxStages, flowExecTimeList)));
   }
 
   /**
