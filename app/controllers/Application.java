@@ -155,7 +155,8 @@ public class Application extends Controller {
     AppResult result = AppResult.find
             .select(String.format("%s, %s", schedulerIdField, schedulerUrlField))
             .where().like(schedulerIdField, value)
-            .orderBy(AppResult.TABLE.FINISH_TIME + " DESC")
+            .order()
+            .desc(AppResult.TABLE.FINISH_TIME)
             .setMaxRows(1)
             .findUnique();
     if (result != null) {
