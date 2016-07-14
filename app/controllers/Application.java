@@ -184,10 +184,6 @@ public class Application extends Controller {
     if (schedulerInfoPair == null) {
       schedulerInfoPair = bestSchedulerInfoMatchLikeValue(String.format("%s%%", partialSchedulerInfoId), schedulerInfoIdField);
     }
-    // check for prefix + suffix match
-    if (schedulerInfoPair == null) {
-      schedulerInfoPair = bestSchedulerInfoMatchLikeValue(String.format("%%%s%%", partialSchedulerInfoId), schedulerInfoIdField);
-    }
     // if we didn't find anything just give a buest guess
     if (schedulerInfoPair == null) {
       schedulerInfoPair = new IdUrlPair(partialSchedulerInfoId, "");
