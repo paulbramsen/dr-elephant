@@ -172,10 +172,12 @@ public class ElephantRunner implements Runnable {
         AnalyticJob analyticJob = null;
         try {
           analyticJob = _jobQueue.take();
-          logger.info("Analyzing " + analyticJob.getAppType().getName() + " "
-              + analyticJob.getAppId());
+          String analysisName = String.format("%s %s", analyticJob.getAppType().getName(), analyticJob.getAppId());
+          long analysisStartTimeMillis = System.currentTimeMillis();
+          logger.info(String.format("Analyzing %s", analysisName));
           AppResult result = analyticJob.getAnalysis();
           result.save();
+          logger.info(String.format("Analysis of %s took %sms", analysisName, System.currentTimeMillis() - analysisStartTimeMillis));
 
         } catch (InterruptedException ex) {
           Thread.currentThread().interrupt();
