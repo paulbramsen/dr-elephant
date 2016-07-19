@@ -36,6 +36,8 @@ import java.util.Set;
 import java.util.TreeSet;
 import models.AppHeuristicResult;
 import models.AppResult;
+
+import org.apache.hadoop.conf.Configuration;
 import org.apache.http.client.utils.URLEncodedUtils;
 import org.apache.http.message.BasicNameValuePair;
 import org.apache.log4j.Logger;
@@ -90,6 +92,9 @@ public class Application extends Controller {
   public static final String COMPARE_FLOW_ID1 = "flow-exec-id1";
   public static final String COMPARE_FLOW_ID2 = "flow-exec-id2";
   public static final String PAGE = "page";
+
+  // Configuration properties
+  private static final String SEARCH_MATCHES_PARTIAL_CONF = "drelephant.application.search_matches_partial";
 
   private static long _lastFetch = 0;
   private static int _numJobsAnalyzed = 0;
@@ -180,8 +185,8 @@ public class Application extends Controller {
     IdUrlPair schedulerInfoPair;
     // check for exact match
     schedulerInfoPair = bestSchedulerInfoMatchLikeValue(partialSchedulerInfoId, schedulerInfoIdField);
-    // check for suffix match
-    if (schedulerInfoPair == null) {
+    // check for suffix match if feature isn't disabled
+    if (schedulerInfoPair == null && ElephantContext.instance().getGeneralConf().getBoolean(SEARCH_MATCHES_PARTIAL_CONF, true)) {
       schedulerInfoPair = bestSchedulerInfoMatchLikeValue(String.format("%s%%", partialSchedulerInfoId), schedulerInfoIdField);
     }
     // if we didn't find anything just give a buest guess

@@ -50,7 +50,6 @@ public class ElephantRunner implements Runnable {
   private static final long RETRY_INTERVAL = 60 * 1000;     // Interval between retries
   private static final int EXECUTOR_NUM = 3;                // The number of executor threads to analyse the jobs
 
-  private static final String GENERAL_CONF = "GeneralConf.xml";
   private static final String FETCH_INTERVAL_KEY = "drelephant.analysis.fetch.interval";
   private static final String RETRY_INTERVAL_KEY = "drelephant.analysis.retry.interval";
   private static final String EXECUTOR_NUM_KEY = "drelephant.analysis.thread.count";
@@ -64,17 +63,13 @@ public class ElephantRunner implements Runnable {
   private ExecutorService _service;
   private BlockingQueue<AnalyticJob> _jobQueue;
   private AnalyticJobGenerator _analyticJobGenerator;
-  private Configuration _configuration;
 
   private void loadGeneralConfiguration() {
-    logger.info("Loading configuration file " + GENERAL_CONF);
+    Configuration configuration = ElephantContext.instance().getGeneralConf();
 
-    _configuration = new Configuration();
-    _configuration.addResource(this.getClass().getClassLoader().getResourceAsStream(GENERAL_CONF));
-
-    _executorNum = Utils.getNonNegativeInt(_configuration, EXECUTOR_NUM_KEY, EXECUTOR_NUM);
-    _fetchInterval = Utils.getNonNegativeLong(_configuration, FETCH_INTERVAL_KEY, FETCH_INTERVAL);
-    _retryInterval = Utils.getNonNegativeLong(_configuration, RETRY_INTERVAL_KEY, RETRY_INTERVAL);
+    _executorNum = Utils.getNonNegativeInt(configuration, EXECUTOR_NUM_KEY, EXECUTOR_NUM);
+    _fetchInterval = Utils.getNonNegativeLong(configuration, FETCH_INTERVAL_KEY, FETCH_INTERVAL);
+    _retryInterval = Utils.getNonNegativeLong(configuration, RETRY_INTERVAL_KEY, RETRY_INTERVAL);
   }
 
   private void loadAnalyticJobGenerator() {
@@ -85,7 +80,7 @@ public class ElephantRunner implements Runnable {
     }
 
     try {
-      _analyticJobGenerator.configure(_configuration);
+      _analyticJobGenerator.configure(ElephantContext.instance().getGeneralConf());
     } catch (Exception e) {
       logger.error("Error occurred when configuring the analysis provider.", e);
       throw new RuntimeException(e);
