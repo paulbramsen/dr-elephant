@@ -526,7 +526,7 @@ public class Application extends Controller {
           .findList();
     }
     if (results.size() == 0) {
-      return notFound("Unable to find record on dag id: " + flowDefPair.getId());
+      return notFound("Unable to find record for flow def id: " + flowDefPair.getId());
     }
 
     for (AppResult result : results) {
@@ -636,7 +636,7 @@ public class Application extends Controller {
     }
 
     if (results.size() == 0) {
-      return notFound("Unable to find record on task id: " + jobDefPair.getId());
+      return notFound("Unable to find record for job def id: " + jobDefPair.getId());
     }
     Map<IdUrlPair, List<AppResult>> flowExecIdToJobsMap =
         limitHistoryResults(groupJobs(results, GroupBy.FLOW_EXECUTION_ID), results.size(), MAX_HISTORY_LIMIT);
