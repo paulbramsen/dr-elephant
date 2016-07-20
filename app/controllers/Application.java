@@ -108,7 +108,7 @@ public class Application extends Controller {
   public static final String PAGE = "page";
 
   // Configuration properties
-  private static final String SEARCH_MATCHES_PARTIAL_CONF = "drelephant.application.search_matches_partial";
+  private static final String SEARCH_MATCHES_PARTIAL_CONF = "drelephant.application.search.match.partial";
 
   private static long _lastFetch = 0;
   private static int _numJobsAnalyzed = 0;
