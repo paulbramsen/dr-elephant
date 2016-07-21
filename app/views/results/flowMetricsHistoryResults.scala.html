@@ -14,7 +14,7 @@
 * the License.
 *@
 
-@(flowDefId: String, graphType: String, results: java.util.Map[IdUrlPair, java.util.Map[IdUrlPair, java.util.List[models.AppResult]]],
+@(flowDefPair: IdUrlPair, graphType: String, results: java.util.Map[IdUrlPair, java.util.Map[IdUrlPair, java.util.List[models.AppResult]]],
         idPairToJobNameMap: java.util.Map[IdUrlPair, String], flowExecTimeList: java.util.List[Long])
 
 @import com.linkedin.drelephant.util.Utils;
@@ -36,7 +36,7 @@
 }
 
 @if(results != null && results.nonEmpty) {
-  @tags.panel(){ Flow History Results: <a href="@flowDefId" style="font-size:14px; color:#083d8d">@flowDefId</a>} {
+  @tags.panel(){ Flow History Results: <a href="@flowDefPair.getUrl" style="font-size:14px; color:#083d8d">@flowDefPair.getId</a>} {
 
     @if(graphType.equals("resources")) {
       <script src="@routes.Assets.at("js/flowresourcehistoryform.js")" type="text/javascript"></script>
