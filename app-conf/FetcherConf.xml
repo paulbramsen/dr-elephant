@@ -32,6 +32,9 @@
   <fetcher>
     <applicationtype>mapreduce</applicationtype>
     <classname>com.linkedin.drelephant.mapreduce.MapReduceFetcherHadoop2</classname>
+    <params>
+      <sampling_enabled>false</sampling_enabled>
+    </params>
   </fetcher>
   <fetcher>
     <applicationtype>spark</applicationtype>
