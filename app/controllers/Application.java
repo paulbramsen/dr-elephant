@@ -239,7 +239,7 @@ public class Application extends Controller {
           .eq(AppResult.TABLE.FLOW_EXEC_ID, flowExecPair.getId())
           .findList();
       Map<IdUrlPair, List<AppResult>> map = groupJobs(results, GroupBy.JOB_EXECUTION_ID);
-      return ok(searchPage.render(null, flowDetails.render(flowExecPair.getId(), map)));
+      return ok(searchPage.render(null, flowDetails.render(flowExecPair, map)));
     }
 
     // Prepare pagination of results
