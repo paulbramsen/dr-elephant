@@ -154,7 +154,11 @@ public class Application extends Controller {
 
   /**
    * Returns the scheduler info id/url pair for the most recent app result that has an id like value
-   * (which can use % and _ SQL wild cards) for the specified field.
+   * (which can use % and _ SQL wild cards) for the specified field. Note that this is a pair rather
+   * than merely an ID/URL because for some schedulers (e.g. Airflow) they are not equivalent and
+   * usually the UI wants to display the ID with a link to the URL. While it is true that the URL
+   * can probably be derived from the ID in most cases, we would need scheduler specific logic which
+   * would be a mess.
    */
   private static IdUrlPair bestSchedulerInfoMatchLikeValue(String value, String schedulerIdField) {
     String schedulerUrlField;
@@ -692,7 +696,7 @@ public class Application extends Controller {
    *
    * So, when the number of executions are less than 10, we skip the last execution and when the number of executions
    * are greater than 10, we skip the last 3 executions just to maximise the correctness.
-     *
+   *
    * @param map The results map to be pruned.
    * @param size Total number of jobs in the map
    * @param execLimit The upper limit on the number of executions to be displayed.
