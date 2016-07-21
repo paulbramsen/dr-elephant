@@ -168,12 +168,15 @@ public class UtilsTest {
     List<AnalyticJob> group2 = new ArrayList<AnalyticJob>();
     group2.add(new AnalyticJob().setAppId("application_2"));
 
-    Set<AnalyticJob> common = Utils.getIntersection(group1, group2);
-    assertEquals(0, common.size());
+    Set<AnalyticJob> commonEmpty1 = Utils.getIntersection(group1, null);
+    assertEquals(0, commonEmpty1.size());
+
+    Set<AnalyticJob> commonEmpty2 = Utils.getIntersection(group1, group2);
+    assertEquals(0, commonEmpty2.size());
 
     group1.add(new AnalyticJob().setAppId("application_2"));
 
-    common = Utils.getIntersection(group1, group2);
-    assertEquals(1, common.size());
+    Set<AnalyticJob> commonNonEmpty = Utils.getIntersection(group1, group2);
+    assertEquals(1, commonNonEmpty.size());
   }
 }

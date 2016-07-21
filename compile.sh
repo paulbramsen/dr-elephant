@@ -90,7 +90,8 @@ rm -rf ${project_root}/dist
 mkdir dist
 
 # Move the h2 evolutions files to default for testing
-cp conf/evolutions/h2/* ./conf/evolutions/default
+mkdir -p conf/evolutions/default
+cp conf/evolutions/h2/*.sql ./conf/evolutions/default
 
 play_command $OPTS clean test compile dist
 

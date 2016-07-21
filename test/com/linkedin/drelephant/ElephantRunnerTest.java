@@ -183,7 +183,7 @@ public class ElephantRunnerTest {
   @Test
   public void testDelayedEnqueue() {
     ElephantRunner elephantRunner = new ElephantRunner();
-    DelayQueue jobQueue= new DelayQueue<AnalyticJob>();
+    DelayQueue jobQueue = new DelayQueue<AnalyticJob>();
     Deencapsulation.invoke(elephantRunner, "delayedEnqueue", new AnalyticJob(), jobQueue);
 
     assertEquals(1, jobQueue.size());

@@ -402,6 +402,10 @@ public final class Utils {
   }
 
   public static Set<AnalyticJob> getIntersection(List<AnalyticJob> undefinedJobs, List<AnalyticJob> completedJobs) {
+    if (undefinedJobs == null || completedJobs == null) {
+      return Collections.<AnalyticJob>emptySet();
+    }
+
     final Set<AnalyticJob> group1 = new TreeSet<AnalyticJob>(new Comparator<AnalyticJob>() {
       public int compare(final AnalyticJob o1, final AnalyticJob o2) {
         return o1.getAppId().compareToIgnoreCase(o2.getAppId());

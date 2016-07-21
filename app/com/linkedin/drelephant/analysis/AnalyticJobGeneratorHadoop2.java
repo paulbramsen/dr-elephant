@@ -270,22 +270,22 @@ public class AnalyticJobGeneratorHadoop2 implements AnalyticJobGenerator {
   }
 
   /**
-   * Check if there are any applications in non-complete state in the database due to the previous run
+   * Check if the application analysis has completed
    * @param appId
    * @return true, if database contains a record with status != SUCCEEDED and status != FAILED, false otherwise
    */
-  private boolean isAppInIncompleteState(String appId) {
+  private boolean isAppComplete(String appId) {
     return !AppResult.find.select("id").where().eq(AppResult.TABLE.ID, appId)
-        .ne(AppResult.TABLE.STATUS, JobStatus.State.SUCCEEDED)
-        .ne(AppResult.TABLE.STATUS, JobStatus.State.FAILED).findList().isEmpty();
+        .eq(AppResult.TABLE.STATUS, JobStatus.State.SUCCEEDED.name())
+        .eq(AppResult.TABLE.STATUS, JobStatus.State.FAILED.name()).findList().isEmpty();
   }
 
   /**
-   * An application is not analyzed if it is not in the database or it is in an incomplete state
+   * An application is analyzed if it has an entry in the database and is in succeeded or failed state
    * @param appId
    * @return
    */
   private boolean isAppAnalyzed(String appId) {
-    return !(AppResult.find.byId(appId) == null || isAppInIncompleteState(appId));
+    return AppResult.find.byId(appId) != null && isAppComplete(appId);
   }
 }

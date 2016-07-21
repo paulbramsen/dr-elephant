@@ -26,6 +26,7 @@ import com.linkedin.drelephant.math.Statistics;
 import com.linkedin.drelephant.security.HadoopSecurity;
 import java.io.IOException;
 import java.security.PrivilegedAction;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.DelayQueue;
@@ -220,13 +221,18 @@ public class ElephantRunner implements Runnable {
   private void fetchApplications(long from, long to) {
     logger.info("Fetching all the analytic apps which started between " + from + " and " + to);
 
-    List<AnalyticJob> undefinedJobs;
-    List<AnalyticJob> completedJobs;
+    List<AnalyticJob> undefinedJobs = new ArrayList<AnalyticJob>();
+    List<AnalyticJob> completedJobs = new ArrayList<AnalyticJob>();
     try {
       _analyticJobGenerator.updateAuthToken(to - _fetchLag);
 
-      undefinedJobs = _analyticJobGenerator.fetchUndefinedAnalyticJobs(from, to);
-      completedJobs = _analyticJobGenerator.fetchCompletedAnalyticJobs(from, to);
+      // Since the running jobs complete at some stage, we want at least one completed executor thread
+      if (_runningExecutorCount > 0 && _completedExecutorCount > 0) {
+        undefinedJobs = _analyticJobGenerator.fetchUndefinedAnalyticJobs(from, to);
+      }
+      if (_completedExecutorCount > 0) {
+        completedJobs = _analyticJobGenerator.fetchCompletedAnalyticJobs(from, to);
+      }
 
       Set<AnalyticJob> commonJobs = Utils.getIntersection(undefinedJobs, completedJobs);
       if (!commonJobs.isEmpty()) {

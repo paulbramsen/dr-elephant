@@ -51,3 +51,8 @@ RUNNING_PID
 
 
 *.jar
+
+
+
+# Project Evolutions
+conf/evolutions/default/*
