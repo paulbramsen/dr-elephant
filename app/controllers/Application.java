@@ -272,7 +272,7 @@ public class Application extends Controller {
     if (results.isEmpty() || currentPage > paginationStats.computePaginationBarEndIndex(results.size())) {
       return ok(searchPage.render(null, jobDetails.render(null)));
     } else {
-      return ok(searchPage.render(paginationStats, searchResults.render("Results",
+      return ok(searchPage.render(paginationStats, searchResults.render(String.format("%,d results", query.findRowCount()),
           results.subList((currentPage - paginationBarStartIndex) * pageLength,
               Math.min(results.size(), (currentPage - paginationBarStartIndex + 1) * pageLength)))));
     }
