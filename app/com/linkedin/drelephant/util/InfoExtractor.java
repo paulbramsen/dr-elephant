@@ -55,7 +55,7 @@ public class InfoExtractor {
    * Load all the schedulers configured in SchedulerConf.xml
    */
 
-  private static void loadSchedulers() {
+  private synchronized static void loadSchedulers() {
     Document document = Utils.loadXMLDoc(SCHEDULER_CONF);
     _schedulerConfData = new SchedulerConfiguration(document.getDocumentElement()).getSchedulerConfigurationData();
     for (SchedulerConfigurationData data : _schedulerConfData) {
