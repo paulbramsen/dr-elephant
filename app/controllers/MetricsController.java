@@ -66,7 +66,7 @@ public class MetricsController extends Controller {
    */
   public static void init() {
     // Metrics registries will be initialized only if enabled
-    if(!Configuration.root().getBoolean("metrics")) {
+    if(!Configuration.root().getBoolean("metrics", false)) {
       LOGGER.debug("Metrics not enabled in the conf file.");
       return;
     }
