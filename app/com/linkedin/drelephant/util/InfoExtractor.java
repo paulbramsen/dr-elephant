@@ -49,16 +49,15 @@ public class InfoExtractor {
 
   private static final String SCHEDULER_CONF = "SchedulerConf.xml";
 
-  private static List<SchedulerConfigurationData> _schedulerConfData;
+  private static final List<SchedulerConfigurationData> _configuredSchedulers;
 
   /**
    * Load all the schedulers configured in SchedulerConf.xml
    */
-
-  private synchronized static void loadSchedulers() {
+  static {
     Document document = Utils.loadXMLDoc(SCHEDULER_CONF);
-    _schedulerConfData = new SchedulerConfiguration(document.getDocumentElement()).getSchedulerConfigurationData();
-    for (SchedulerConfigurationData data : _schedulerConfData) {
+    _configuredSchedulers = new SchedulerConfiguration(document.getDocumentElement()).getSchedulerConfigurationData();
+    for (SchedulerConfigurationData data : _configuredSchedulers) {
       logger.info(String.format("Load Scheduler %s with class : %s", data.getSchedulerName(), data.getClassName()));
     }
   }
@@ -71,11 +70,8 @@ public class InfoExtractor {
    * @return the corresponding Scheduler which scheduled the job.
    */
   public static Scheduler getSchedulerInstance(String appId, Properties properties) {
-    if (_schedulerConfData == null) {
-      loadSchedulers();
-    }
     if (properties != null) {
-      for (SchedulerConfigurationData data : _schedulerConfData) {
+      for (SchedulerConfigurationData data : _configuredSchedulers) {
         try {
           Class<?> schedulerClass = Play.current().classloader().loadClass(data.getClassName());
           Object instance = schedulerClass.getConstructor(String.class, Properties.class, SchedulerConfigurationData.class).newInstance(appId, properties, data);
