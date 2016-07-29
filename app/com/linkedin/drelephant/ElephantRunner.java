@@ -26,8 +26,6 @@ import com.linkedin.drelephant.analysis.AnalyticJobGeneratorHadoop2;
 
 import com.linkedin.drelephant.security.HadoopSecurity;
 
-import akka.dispatch.ThreadPoolConfig;
-import akka.dispatch.ThreadPoolExecutorConfigurator;
 import controllers.MetricsController;
 import java.io.IOException;
 import java.security.PrivilegedAction;
@@ -44,7 +42,6 @@ import models.AppResult;
 import org.apache.commons.lang.exception.ExceptionUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.log4j.Logger;
-import org.springframework.scheduling.concurrent.ThreadPoolExecutorFactoryBean;
 
 
 /**
@@ -179,7 +176,10 @@ public class ElephantRunner implements Runnable {
         logger.info(String.format("Analyzing %s", analysisName));
         AppResult result = _analyticJob.getAnalysis();
         result.save();
-        logger.info(String.format("Analysis of %s took %sms", analysisName, System.currentTimeMillis() - analysisStartTimeMillis));
+        long processingTime = System.currentTimeMillis() - analysisStartTimeMillis;
+        logger.info(String.format("Analysis of %s took %sms", analysisName, processingTime));
+        MetricsController.setJobProcessingTime(processingTime);
+        MetricsController.markProcessedJobs();
 
       } catch (InterruptedException e) {
         logger.info("Thread interrupted");

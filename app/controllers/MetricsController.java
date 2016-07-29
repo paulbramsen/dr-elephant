@@ -17,6 +17,7 @@
 package controllers;
 
 import com.codahale.metrics.Gauge;
+import com.codahale.metrics.Histogram;
 import com.codahale.metrics.JmxReporter;
 import com.codahale.metrics.Meter;
 import com.codahale.metrics.MetricRegistry;
@@ -58,7 +59,9 @@ public class MetricsController extends Controller {
 
   private static int _queueSize = -1;
   private static int _retryQueueSize = -1;
+  private static Meter processedJobs;
   private static Meter skippedJobs;
+  private static Histogram jobProcessingTime;
 
   /**
    * Initializer method for the metrics registry. Call this method before registering
@@ -81,7 +84,11 @@ public class MetricsController extends Controller {
 
     String className = AnalyticJob.class.getSimpleName();
 
-    metricRegistry.meter(name(className, "skippedJobs", "count"));
+    metricRegistry.register(name(className, "skippedJobs", "count"), skippedJobs);
+
+    metricRegistry.register(name(className, "processedJobs", "count"), processedJobs);
+
+    metricRegistry.register(name(className, "jobProcessingTime", "ms"), jobProcessingTime);
 
     metricRegistry.register(name(className, "jobQueue", "size"), new Gauge<Integer>() {
       @Override
@@ -148,6 +155,21 @@ public class MetricsController extends Controller {
    */
   public static void setRetryQueueSize(int retryQueueSize) {
     _retryQueueSize = retryQueueSize;
+  }
+
+  /**
+   * Increments the meter for keeping track of processed jobs in metrics registry.
+   */
+  public static void markProcessedJobs() {
+    processedJobs.mark();
+  }
+
+  /**
+   * Sets the time in milliseconds taken to process a job.
+   * @param processingTimeTaken
+   */
+  public static void setJobProcessingTime(long processingTimeTaken) {
+    jobProcessingTime.update(processingTimeTaken);
   }
 
   /**
