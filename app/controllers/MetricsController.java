@@ -59,8 +59,8 @@ public class MetricsController extends Controller {
 
   private static int _queueSize = -1;
   private static int _retryQueueSize = -1;
-  private static Meter processedJobs;
   private static Meter skippedJobs;
+  private static Meter processedJobs;
   private static Histogram jobProcessingTime;
 
   /**
@@ -84,26 +84,21 @@ public class MetricsController extends Controller {
 
     String className = AnalyticJob.class.getSimpleName();
 
-    metricRegistry.register(name(className, "skippedJobs", "count"), skippedJobs);
-
-    metricRegistry.register(name(className, "processedJobs", "count"), processedJobs);
-
-    metricRegistry.register(name(className, "jobProcessingTime", "ms"), jobProcessingTime);
-
+    skippedJobs = metricRegistry.meter(name(className, "skippedJobs", "count"));
+    processedJobs = metricRegistry.meter(name(className, "processedJobs", "count"));
+    jobProcessingTime = metricRegistry.histogram(name(className, "jobProcessingTime", "ms"));
     metricRegistry.register(name(className, "jobQueue", "size"), new Gauge<Integer>() {
       @Override
       public Integer getValue() {
         return _queueSize;
       }
     });
-
     metricRegistry.register(name(className, "retryQueue", "size"), new Gauge<Integer>() {
       @Override
       public Integer getValue() {
         return _retryQueueSize;
       }
     });
-
     metricRegistry.registerAll(new CustomGarbageCollectorMetricSet());
     metricRegistry.registerAll(new MemoryUsageGaugeSet());
 
