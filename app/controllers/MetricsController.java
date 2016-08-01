@@ -28,6 +28,8 @@ import com.codahale.metrics.jvm.MemoryUsageGaugeSet;
 import com.linkedin.drelephant.analysis.AnalyticJob;
 import com.linkedin.drelephant.metrics.CustomGarbageCollectorMetricSet;
 import org.apache.log4j.Logger;
+
+import models.AppResult;
 import play.Configuration;
 import play.libs.Json;
 import play.mvc.Controller;
@@ -49,19 +51,18 @@ import static com.codahale.metrics.MetricRegistry.name;
 public class MetricsController extends Controller {
   private static final Logger LOGGER = Logger.getLogger(MetricsController.class);
 
-  private static MetricRegistry metricRegistry = null;
-  private static HealthCheckRegistry healthCheckRegistry = null;
-
   private static final String METRICS_NOT_ENABLED = "Metrics not enabled";
   private static final String HEALTHCHECK_NOT_ENABLED = "Healthcheck not enabled";
-  private static final String UNINITIALIZED_MESSAGE =
-      "Metrics should be initialized before use.";
+  private static final String UNINITIALIZED_MESSAGE = "Metrics should be initialized before use.";
+
+  private static MetricRegistry _metricRegistry = null;
+  private static HealthCheckRegistry _healthCheckRegistry = null;
 
   private static int _queueSize = -1;
   private static int _retryQueueSize = -1;
-  private static Meter skippedJobs;
-  private static Meter processedJobs;
-  private static Histogram jobProcessingTime;
+  private static Meter _skippedJobs;
+  private static Meter _processedJobs;
+  private static Histogram _jobProcessingTime;
 
   /**
    * Initializer method for the metrics registry. Call this method before registering
@@ -75,38 +76,57 @@ public class MetricsController extends Controller {
     }
 
     // Metrics & healthcheck registries will be initialized only once
-    if(metricRegistry != null) {
+    if(_metricRegistry != null) {
       LOGGER.debug("Metric registries already initialized.");
       return;
     }
 
-    metricRegistry = new MetricRegistry();
+    _metricRegistry = new MetricRegistry();
 
     String className = AnalyticJob.class.getSimpleName();
 
-    skippedJobs = metricRegistry.meter(name(className, "skippedJobs", "count"));
-    processedJobs = metricRegistry.meter(name(className, "processedJobs", "count"));
-    jobProcessingTime = metricRegistry.histogram(name(className, "jobProcessingTime", "ms"));
-    metricRegistry.register(name(className, "jobQueue", "size"), new Gauge<Integer>() {
+    _skippedJobs = _metricRegistry.meter(name(className, "skippedJobs", "count"));
+    _processedJobs = _metricRegistry.meter(name(className, "processedJobs", "count"));
+    _jobProcessingTime = _metricRegistry.histogram(name(className, "jobProcessingTime", "ms"));
+    _metricRegistry.register(name(className, "jobQueue", "size"), new Gauge<Integer>() {
       @Override
       public Integer getValue() {
         return _queueSize;
       }
     });
-    metricRegistry.register(name(className, "retryQueue", "size"), new Gauge<Integer>() {
+    _metricRegistry.register(name(className, "lastDayJobs", "count"), new Gauge<Integer>() {
+      private static final long DAY = 24 * 60 * 60 * 1000;
+      private static final long UPDATE_DELAY = 60 * 1000;
+
+      private long _lastUpdate = 0;
+      private int _count = -1;
+
+      @Override
+      public Integer getValue() {
+        long now = System.currentTimeMillis();
+        if (now - _lastUpdate > UPDATE_DELAY) {
+          _count = AppResult.find.where()
+                  .gt(AppResult.TABLE.FINISH_TIME, now - DAY)
+                  .findRowCount();
+          _lastUpdate = now;
+        }
+        return _count;
+      }
+    });
+    _metricRegistry.register(name(className, "retryQueue", "size"), new Gauge<Integer>() {
       @Override
       public Integer getValue() {
         return _retryQueueSize;
       }
     });
-    metricRegistry.registerAll(new CustomGarbageCollectorMetricSet());
-    metricRegistry.registerAll(new MemoryUsageGaugeSet());
+    _metricRegistry.registerAll(new CustomGarbageCollectorMetricSet());
+    _metricRegistry.registerAll(new MemoryUsageGaugeSet());
 
-    JmxReporter.forRegistry(metricRegistry).build().start();
+    JmxReporter.forRegistry(_metricRegistry).build().start();
 
-    healthCheckRegistry = new HealthCheckRegistry();
+    _healthCheckRegistry = new HealthCheckRegistry();
 
-    healthCheckRegistry.register("ThreadDeadlockHealthCheck",
+    _healthCheckRegistry.register("ThreadDeadlockHealthCheck",
         new ThreadDeadlockHealthCheck());
   }
 
@@ -117,8 +137,8 @@ public class MetricsController extends Controller {
    * and <code>null</code> otherwise.
    */
   public static Timer.Context startTimer(String name) {
-    if(metricRegistry != null) {
-      return metricRegistry.timer(name).time();
+    if(_metricRegistry != null) {
+      return _metricRegistry.timer(name).time();
     } else {
       throw new NullPointerException(UNINITIALIZED_MESSAGE);
     }
@@ -129,8 +149,8 @@ public class MetricsController extends Controller {
    * @return The <code>MetricRegistry</code> if initialized.
    */
   public static MetricRegistry getMetricRegistry() {
-    if (metricRegistry != null) {
-      return metricRegistry;
+    if (_metricRegistry != null) {
+      return _metricRegistry;
     } else {
       throw new NullPointerException(UNINITIALIZED_MESSAGE);
     }
@@ -156,7 +176,7 @@ public class MetricsController extends Controller {
    * Increments the meter for keeping track of processed jobs in metrics registry.
    */
   public static void markProcessedJobs() {
-    processedJobs.mark();
+    _processedJobs.mark();
   }
 
   /**
@@ -164,7 +184,7 @@ public class MetricsController extends Controller {
    * @param processingTimeTaken
    */
   public static void setJobProcessingTime(long processingTimeTaken) {
-    jobProcessingTime.update(processingTimeTaken);
+    _jobProcessingTime.update(processingTimeTaken);
   }
 
   /**
@@ -173,7 +193,7 @@ public class MetricsController extends Controller {
    * retries can be marked as skipped.
    */
   public static void markSkippedJob() {
-    skippedJobs.mark();
+    _skippedJobs.mark();
   }
 
   /**
@@ -193,8 +213,8 @@ public class MetricsController extends Controller {
    * @return Will return all the metrics in Json format.
    */
   public static Result index() {
-    if (metricRegistry != null) {
-      return ok(Json.toJson(metricRegistry));
+    if (_metricRegistry != null) {
+      return ok(Json.toJson(_metricRegistry));
     } else {
       return ok(Json.toJson(METRICS_NOT_ENABLED));
     }
@@ -207,8 +227,8 @@ public class MetricsController extends Controller {
    * @return Will return all the healthcheck metrics in Json format.
    */
   public static Result healthcheck() {
-    if (healthCheckRegistry != null) {
-      return ok(Json.toJson(healthCheckRegistry.runHealthChecks()));
+    if (_healthCheckRegistry != null) {
+      return ok(Json.toJson(_healthCheckRegistry.runHealthChecks()));
     } else {
       return ok(Json.toJson(HEALTHCHECK_NOT_ENABLED));
     }
