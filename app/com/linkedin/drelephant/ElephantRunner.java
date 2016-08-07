@@ -16,6 +16,7 @@
 
 package com.linkedin.drelephant;
 
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.linkedin.drelephant.analysis.AnalyticJob;
 import com.linkedin.drelephant.analysis.AnalyticJobGenerator;
 import com.linkedin.drelephant.analysis.HDFSContext;
@@ -32,6 +33,11 @@ import java.util.Set;
 import java.util.concurrent.DelayQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.linkedin.drelephant.util.Utils;
@@ -75,13 +81,11 @@ public class ElephantRunner implements Runnable {
 
   private final HadoopSecurity _hadoopSecurity;
   private final Configuration _configuration;
-  private ExecutorService _completedJobPool;
-  private ExecutorService _undefinedJobPool;
 
-  // This queue will contain SUCCEEDED and FAILED jobs
-  private final DelayQueue<AnalyticJob> _completedJobQueue = new DelayQueue<AnalyticJob>();
-  // This queue will contain Jobs in Undefined state (RUNNING, PREP)
-  private final DelayQueue<AnalyticJob> _undefinedJobQueue = new DelayQueue<AnalyticJob>();
+  // Executor for SUCCEEDED and FAILED jobs
+  private ScheduledThreadPoolExecutor _completedJobThreadPoolExecutor;
+  // Executor for Jobs in Undefined state (RUNNING, PREP)
+  private ScheduledThreadPoolExecutor _undefinedJobThreadPoolExecutor;
 
   private Cluster _cluster;
   private AnalyticJobGenerator _analyticJobGenerator;
@@ -128,8 +132,8 @@ public class ElephantRunner implements Runnable {
     } catch (Exception e) {
       logger.error(e.getMessage());
       logger.error(ExceptionUtils.getStackTrace(e));
-      _completedJobPool.shutdown();
-      _undefinedJobPool.shutdown();
+      _completedJobThreadPoolExecutor.shutdown();
+      _undefinedJobThreadPoolExecutor.shutdown();
     }
   }
 
@@ -190,21 +194,20 @@ public class ElephantRunner implements Runnable {
    * Create a thread pool and load all the executor threads for running and completed jobs
    */
   private void loadExecutorThreads() {
-    logger.info("The number of threads analysing completed jobs is " + _completedExecutorCount);
-    if (_completedExecutorCount > 0) {
-      _completedJobPool = Executors.newFixedThreadPool((int)_completedExecutorCount);
-      for (int i = 0; i < _completedExecutorCount; i++) {
-        _completedJobPool.submit(new CompletedExecutorThread(i + 1, _completedJobQueue));
-      }
+    if (_completedExecutorCount < 1) {
+      throw new RuntimeException("Must have at least 1 worker thread for analyzing completed jobs.");
     }
 
-    logger.info("The number of threads analysing running jobs is " + _runningExecutorCount);
-    if (_runningExecutorCount > 0) {
-      _undefinedJobPool = Executors.newFixedThreadPool((int) _runningExecutorCount);
-      for (int i = 0; i < _runningExecutorCount; i++) {
-        _undefinedJobPool.submit(new UndefinedExecutorThread(i + 1, _undefinedJobQueue));
-      }
+    logger.info("The number of threads analysing completed jobs is " + _completedExecutorCount);
+    ThreadFactory completedJobfactory = new ThreadFactoryBuilder().setNameFormat("dr-el-completed-executor-thread-%d").build();
+    _completedJobThreadPoolExecutor = new ScheduledThreadPoolExecutor((int)_completedExecutorCount, completedJobfactory);
+
+    if (_runningExecutorCount < 0) {
+      _runningExecutorCount = 0;
     }
+    logger.info("The number of threads analysing running jobs is " + _runningExecutorCount);
+    ThreadFactory runningJobFactory = new ThreadFactoryBuilder().setNameFormat("dr-el-running-executor-thread-%d").build();
+    _undefinedJobThreadPoolExecutor = new ScheduledThreadPoolExecutor((int)_runningExecutorCount, runningJobFactory);
   }
 
   /**
@@ -245,121 +248,126 @@ public class ElephantRunner implements Runnable {
       return;
     }
 
-    // There is a lag of job data from AM/NM to JobHistoryServer HDFS, we shouldn't use the current time, since
+/*    // There is a lag of job data from AM/NM to JobHistoryServer HDFS, we shouldn't use the current time, since
     // there might be new jobs arriving after we fetch jobs. We provide one minute delay to address this lag.
     for (int i = 0; i < completedJobs.size(); i++) {
       completedJobs.get(i).updateExpiryTime(_fetchLag);
+    }*/
+
+    for (AnalyticJob analyticJob : completedJobs) {
+      _completedJobThreadPoolExecutor.schedule(new CompletedExecutorJob(analyticJob), 0, TimeUnit.MILLISECONDS);
     }
+    logger.info("Completed Job queue size is " + (_completedJobThreadPoolExecutor.getQueue().size()));
 
-    logger.info("Completed Job queue size is " + (_completedJobQueue.size() + completedJobs.size()));
-    logger.info("Undefined Job queue size is " + (_undefinedJobQueue.size() + undefinedJobs.size()));
-
-    _completedJobQueue.addAll(completedJobs);
-    _undefinedJobQueue.addAll(undefinedJobs);
+    for (AnalyticJob analyticJob : undefinedJobs) {
+      _undefinedJobThreadPoolExecutor.scheduleWithFixedDelay(new UndefinedExecutorJob(analyticJob), 0,
+          _runningJobUpdateInterval, TimeUnit.MILLISECONDS);
+    }
+    logger.info("Undefined Job queue size is " + (_undefinedJobThreadPoolExecutor.getQueue().size()));
 
     _lastTime = to;
   }
 
-  private class CompletedExecutorThread implements Runnable {
-    private int _threadId;
-    private DelayQueue<AnalyticJob> _completedJobQueue;
+  private class CompletedExecutorJob implements Runnable {
 
-    CompletedExecutorThread(int threadNum, DelayQueue<AnalyticJob> completedJobQueue) {
-      this._threadId = threadNum;
-      this._completedJobQueue = completedJobQueue;
+    private AnalyticJob _analyticJob;
+
+    CompletedExecutorJob(AnalyticJob analyticJob) {
+      this._analyticJob = analyticJob;
     }
 
     @Override
     public void run() {
-      while (_running.get() && !Thread.currentThread().isInterrupted()) {
-        AnalyticJob analyticJob = null;
-        try {
-          analyticJob =_completedJobQueue.take();
-          Job job = getJobFromCluster(analyticJob);
-          analyticJob.setJobStatus(job.getJobState().name()).setSeverity(0);
-          JobStatus.State jobState = job.getJobState();
+      try {
+        long analysisStartTimeMillis = System.currentTimeMillis();
+        Job job = getJobFromCluster(_analyticJob);
+        _analyticJob.setJobStatus(job.getJobState().name()).setSeverity(0);
+        JobStatus.State jobState = job.getJobState();
 
-          // Job State can be RUNNING, SUCCEEDED, FAILED, PREP or KILLED
-          if (job.getJobState() == JobStatus.State.SUCCEEDED || job.getJobState() == JobStatus.State.FAILED) {
-            logger.info("Executor thread " + _threadId + " for completed jobs is analyzing "
-                + analyticJob.getAppType().getName() + " " + analyticJob.getAppId() + " :: " + jobState.name());
-            AppResult result = analyticJob.getAnalysis();
-            AppResult jobInDb = AppResult.find.byId(analyticJob.getAppId());
-            if (jobInDb == null) {
-              result.save();
-            } else {
-              // Delete and save to prevent Optimistic Locking
-              jobInDb.delete();
-              result.save();
-            }
+        // Job State can be RUNNING, SUCCEEDED, FAILED, PREP or KILLED
+        if (job.getJobState() == JobStatus.State.SUCCEEDED || job.getJobState() == JobStatus.State.FAILED) {
+          String analysisName = String.format("%s %s %s", _analyticJob.getAppType().getName(), _analyticJob.getAppId(),
+              jobState.name());
+          logger.info(String.format("Analyzing %s", analysisName));
+          AppResult result = _analyticJob.getAnalysis();
+          AppResult jobInDb = AppResult.find.byId(_analyticJob.getAppId());
+          if (jobInDb == null) {
+            result.save();
           } else {
-            // Should not reach here. We consider only SUCCEEDED and FAILED JOBs in _completedJobQueue
-            throw new RuntimeException(analyticJob.getAppId() + " is in " + jobState.name() + " state. This should not"
-                + " happen. We consider only Succeeded and Failed jobs in Completed Jobs Queue");
+            // Delete and save to prevent Optimistic Locking
+            jobInDb.delete();
+            result.save();
           }
-        } catch (InterruptedException ex) {
-          Thread.currentThread().interrupt();
-        } catch (Exception e) {
-          logger.error(e.getMessage());
-          logger.error(ExceptionUtils.getStackTrace(e));
-          retryOrDrop(analyticJob);
+          logger.info(String.format("Analysis of %s took %sms", analysisName, System.currentTimeMillis()
+              - analysisStartTimeMillis));
+        } else {
+          // Should not reach here. We consider only SUCCEEDED and FAILED JOBs in _completedJobQueue
+          throw new RuntimeException(_analyticJob.getAppId() + " is in " + jobState.name() + " state. This should not"
+              + " happen. We consider only Succeeded and Failed jobs in Completed Jobs Queue");
         }
+      } catch (InterruptedException e) {
+        logger.info("Thread interrupted");
+        logger.info(e.getMessage());
+        logger.info(ExceptionUtils.getStackTrace(e));
+        Thread.currentThread().interrupt();
+      } catch (Exception e) {
+        logger.error(e.getMessage());
+        logger.error(ExceptionUtils.getStackTrace(e));
+        retryOrDrop(_analyticJob);
       }
-      logger.info("Executor Thread" + _threadId + " for completed jobs is terminated.");
     }
   }
 
-  private class UndefinedExecutorThread implements Runnable {
+  private class UndefinedExecutorJob implements Runnable {
 
-    private int _threadId;
-    private DelayQueue<AnalyticJob> _undefinedJobQueue;
+    private AnalyticJob _analyticJob;
 
-    UndefinedExecutorThread(int threadNum, DelayQueue<AnalyticJob> undefinedJobQueue) {
-      this._threadId = threadNum;
-      this._undefinedJobQueue = undefinedJobQueue;
+    UndefinedExecutorJob(AnalyticJob analyticJob) {
+      this._analyticJob = analyticJob;
     }
 
     @Override
     public void run() {
-      while (_running.get() && !Thread.currentThread().isInterrupted()) {
-        AnalyticJob analyticJob = null;
-        try {
-          analyticJob =_undefinedJobQueue.take();
-          Job job = getJobFromCluster(analyticJob);
-          analyticJob.setJobStatus(job.getJobState().name()).setSeverity(0);
-          JobStatus.State jobState = job.getJobState();
+      try {
+        long analysisStartTimeMillis = System.currentTimeMillis();
 
-          // Job State can be RUNNING, SUCCEEDED, FAILED, PREP or KILLED
-          if (jobState == JobStatus.State.SUCCEEDED || jobState == JobStatus.State.FAILED) {
-            logger.info("App " + analyticJob.getAppId() + " has now completed. Adding it to the completed job Queue.");
-            delayedEnqueue(analyticJob.setFinishTime(job.getFinishTime()), _completedJobQueue);
-          } else if (jobState == JobStatus.State.RUNNING) {
-            logger.info("Executor thread " + _threadId + " for undefined jobs is analyzing "
-                + analyticJob.getAppType().getName() + " " + analyticJob.getAppId() + " :: " + jobState.name());
-            if (analyticJob.getAppType().getName().equalsIgnoreCase(SPARK_APP_TYPE)) {
-              // Ignore as we do not capture any metrics for Spark jobs now
-              delayedEnqueue(analyticJob, _undefinedJobQueue);
-            } else {
-              AppResult result = analyticJob.getAnalysis();
-              delayedEnqueue(analyticJob, _undefinedJobQueue);
-              if (AppResult.find.byId(analyticJob.getAppId()) == null) {
-                result.save();
-              } else {
-                result.update();
-              }
-            }
+        Job job = getJobFromCluster(_analyticJob);
+        _analyticJob.setJobStatus(job.getJobState().name()).setSeverity(0);
+        JobStatus.State jobState = job.getJobState();
+
+        // Job State can be RUNNING, SUCCEEDED, FAILED, PREP or KILLED
+        if (jobState == JobStatus.State.SUCCEEDED || jobState == JobStatus.State.FAILED) {
+          logger.info(
+              "App " + _analyticJob.getAppId() + " has now completed. Adding it to the completed job thread pool.");
+          _completedJobThreadPoolExecutor.schedule(new CompletedExecutorJob(_analyticJob), 0, TimeUnit.MILLISECONDS);
+        } else if (jobState == JobStatus.State.RUNNING) {
+          String analysisName = String.format("%s %s %s", _analyticJob.getAppType().getName(), _analyticJob.getAppId(),
+              jobState.name());
+          logger.info(String.format("Analyzing %s", analysisName));
+          if (_analyticJob.getAppType().getName().equalsIgnoreCase(SPARK_APP_TYPE)) {
+            // Ignore as we do not capture any metrics for Spark jobs now
+            //delayedEnqueue(_analyticJob, _undefinedJobQueue);
           } else {
-            // Ignore Job State
-            delayedEnqueue(analyticJob, _undefinedJobQueue);
+            AppResult result = _analyticJob.getAnalysis();
+            //delayedEnqueue(_analyticJob, _undefinedJobQueue);
+            if (AppResult.find.byId(_analyticJob.getAppId()) == null) {
+              result.save();
+            } else {
+              result.update();
+            }
           }
-        } catch (InterruptedException ex) {
-          Thread.currentThread().interrupt();
-        } catch (Exception e) {
-          logger.error(e.getMessage());
-          logger.error(ExceptionUtils.getStackTrace(e));
-          retryOrDrop(analyticJob);
+        } else {
+          // Ignore Job State
+          // delayedEnqueue(_analyticJob, _undefinedJobQueue);
         }
-      } logger.info("Running Executor Thread" + _threadId + " is terminated.");
+      } catch (InterruptedException ex) {
+        Thread.currentThread().interrupt();
+      } catch (Exception e) {
+        _completedJobThreadPoolExecutor.schedule(new CompletedExecutorJob(_analyticJob), 0, TimeUnit.MILLISECONDS);
+        logger.error(e.getMessage());
+        logger.error(ExceptionUtils.getStackTrace(e));
+        retryOrDrop(_analyticJob);
+      }
     }
   }
 
@@ -390,14 +398,6 @@ public class ElephantRunner implements Runnable {
   private void delayedEnqueue(AnalyticJob analyticJob, DelayQueue<AnalyticJob> jobQueue) {
     analyticJob.updateExpiryTime(_runningJobUpdateInterval);
     jobQueue.add(analyticJob);
-  }
-
-  public DelayQueue<AnalyticJob> getCompletedJobQueue() {
-    return _completedJobQueue;
-  }
-
-  public DelayQueue<AnalyticJob> getUndefinedJobQueue() {
-    return _undefinedJobQueue;
   }
 
   /**
@@ -438,22 +438,31 @@ public class ElephantRunner implements Runnable {
     }
   }
 
+  public int getCompletedThreadPoolQueueSize() {
+    return _completedJobThreadPoolExecutor.getQueue().size();
+  }
+
+  public int getUndefinedThreadPoolQueueSize() {
+    return _undefinedJobThreadPoolExecutor.getQueue().size();
+  }
+
   /**
    * Kill the Dr. Elephant daemon
    */
   public void kill() {
     _running.set(false);
-    if (_completedJobPool != null && !_completedJobPool.isShutdown()) {
-      _completedJobPool.shutdownNow();
+    if (_completedJobThreadPoolExecutor != null) {
+      _completedJobThreadPoolExecutor.shutdownNow();
     }
-    if (_undefinedJobPool != null && !_undefinedJobPool.isShutdown()) {
-      _undefinedJobPool.shutdownNow();
+    if (_undefinedJobThreadPoolExecutor != null) {
+      _undefinedJobThreadPoolExecutor.shutdownNow();
     }
   }
 
   public boolean isKilled() {
-    if (_completedJobPool != null && _undefinedJobPool != null) {
-      return !_running.get() && _completedJobPool.isShutdown() && _undefinedJobPool.isShutdown();
+    if (_completedJobThreadPoolExecutor != null && _undefinedJobThreadPoolExecutor != null) {
+      return !_running.get() && _completedJobThreadPoolExecutor.isShutdown() &&
+          _undefinedJobThreadPoolExecutor.isShutdown();
     }
     return true;
   }

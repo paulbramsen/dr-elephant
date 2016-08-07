@@ -48,9 +48,9 @@ CREATE TABLE yarn_app_result (
 create index yarn_app_result_i1 on yarn_app_result (finish_time);
 create index yarn_app_result_i2 on yarn_app_result (username,finish_time);
 create index yarn_app_result_i3 on yarn_app_result (job_type,username,finish_time);
-create index yarn_app_result_i4 on yarn_app_result (flow_exec_id);
-create index yarn_app_result_i5 on yarn_app_result (job_def_id);
-create index yarn_app_result_i6 on yarn_app_result (flow_def_id);
+create index yarn_app_result_i4 on yarn_app_result (flow_exec_id(100));
+create index yarn_app_result_i5 on yarn_app_result (job_def_id(100));
+create index yarn_app_result_i6 on yarn_app_result (flow_def_id(100));
 create index yarn_app_result_i7 on yarn_app_result (start_time);
 
 CREATE TABLE yarn_app_heuristic_result (
