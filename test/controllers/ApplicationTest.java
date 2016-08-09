@@ -44,7 +44,7 @@ public class ApplicationTest {
     assertTrue(html.body().contains("I've looked through <b>5</b> jobs that have finished in the last 24 hours."));
     assertTrue(html.body().contains("Of those, about <b>2</b> could use some tuning"));
     assertTrue(html.body().contains("and <b>3</b> need some serious attention."));
-    assertTrue(html.body().contains("I've looked through <b>1,717</b> jobs in all time."));
+    assertTrue(html.body().contains("I have <b>1,717</b> processed jobs in my database."));
   }
 
   @Test
