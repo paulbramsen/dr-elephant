@@ -41,7 +41,7 @@ public class ApplicationTest {
     Content html = homePage.render(5, 1717, 2, 3, searchResults.render("Latest analysis", null));
     assertEquals("text/html", html.contentType());
     assertTrue(html.body().contains("Hello there, I've been busy!"));
-    assertTrue(html.body().contains("I've looked through <b>5</b> jobs that finished in the last 24 hours."));
+    assertTrue(html.body().contains("I've looked at <b>5</b> jobs that finished in the last 24 hours."));
     assertTrue(html.body().contains("Of those, about <b>2</b> could use some tuning (severe)<"));
     assertTrue(html.body().contains("and <b>3</b> need some serious attention (critical)."));
     assertTrue(html.body().contains("I have <b>1,717</b> processed jobs in my database."));
