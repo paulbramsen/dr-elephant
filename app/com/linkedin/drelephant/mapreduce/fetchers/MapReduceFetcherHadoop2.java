@@ -14,11 +14,14 @@
  * the License.
  */
 
-package com.linkedin.drelephant.mapreduce;
+package com.linkedin.drelephant.mapreduce.fetchers;
 
 import com.linkedin.drelephant.analysis.AnalyticJob;
+<<<<<<< HEAD:app/com/linkedin/drelephant/mapreduce/MapReduceFetcherHadoop2.java
 import com.linkedin.drelephant.analysis.ElephantFetcher;
 import com.linkedin.drelephant.analysis.HadoopSystemContext;
+=======
+>>>>>>> master:app/com/linkedin/drelephant/mapreduce/fetchers/MapReduceFetcherHadoop2.java
 import com.linkedin.drelephant.mapreduce.data.MapReduceApplicationData;
 import com.linkedin.drelephant.mapreduce.data.MapReduceCounterData;
 import com.linkedin.drelephant.mapreduce.data.MapReduceTaskData;
@@ -31,7 +34,14 @@ import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
+<<<<<<< HEAD:app/com/linkedin/drelephant/mapreduce/MapReduceFetcherHadoop2.java
 import java.util.*;
+=======
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Properties;
+import java.util.Random;
+>>>>>>> master:app/com/linkedin/drelephant/mapreduce/fetchers/MapReduceFetcherHadoop2.java
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -49,14 +59,21 @@ import org.codehaus.jackson.map.ObjectMapper;
 /**
  * This class implements the Fetcher for MapReduce Applications on Hadoop2
  */
+<<<<<<< HEAD:app/com/linkedin/drelephant/mapreduce/MapReduceFetcherHadoop2.java
 public class MapReduceFetcherHadoop2 implements ElephantFetcher<MapReduceApplicationData> {
   private static final Logger logger = Logger.getLogger(ElephantFetcher.class);
   private static final int MAX_SAMPLE_SIZE = 200;
   private static final String SAMPLING_ENABLED = "sampling_enabled";
+=======
+public class MapReduceFetcherHadoop2 extends MapReduceFetcher {
+  private static final Logger logger = Logger.getLogger(MapReduceFetcherHadoop2.class);
+  // We provide one minute job fetch delay due to the job sending lag from AM/NM to JobHistoryServer HDFS
+>>>>>>> master:app/com/linkedin/drelephant/mapreduce/fetchers/MapReduceFetcherHadoop2.java
 
   private URLFactory _urlFactory;
   private JSONFactory _jsonFactory;
   private String _jhistoryWebAddr;
+<<<<<<< HEAD:app/com/linkedin/drelephant/mapreduce/MapReduceFetcherHadoop2.java
   private FetcherConfigurationData _fetcherConfigurationData;
   private Cluster _cluster;
   private Configuration _configuration;
@@ -70,6 +87,11 @@ public class MapReduceFetcherHadoop2 implements ElephantFetcher<MapReduceApplica
 
   private void initCluster() throws IOException {
     this._cluster = new Cluster(_configuration);
+=======
+
+  public MapReduceFetcherHadoop2(FetcherConfigurationData fetcherConfData) throws IOException {
+    super(fetcherConfData);
+>>>>>>> master:app/com/linkedin/drelephant/mapreduce/fetchers/MapReduceFetcherHadoop2.java
 
     final String jhistoryAddr = _configuration.get("mapreduce.jobhistory.webapp.address");
     _jhistoryWebAddr = "http://" + jhistoryAddr + "/jobhistory/job/";
@@ -473,17 +495,7 @@ public class MapReduceFetcherHadoop2 implements ElephantFetcher<MapReduceApplica
 
     private void getTaskData(String jobId, List<MapReduceTaskData> taskList) throws IOException, AuthenticationException {
 
-      int sampleSize = taskList.size();
-
-      // check if sampling is enabled
-      if(Boolean.parseBoolean(_fetcherConfigurationData.getParamMap().get(SAMPLING_ENABLED))) {
-        if (taskList.size() > MAX_SAMPLE_SIZE) {
-          logger.info(jobId + " needs sampling.");
-          Collections.shuffle(taskList);
-        }
-        sampleSize = Math.min(taskList.size(), MAX_SAMPLE_SIZE);
-      }
-
+      int sampleSize = sampleAndGetSize(jobId, taskList);
 
       for(int i=0; i < sampleSize; i++) {
         MapReduceTaskData data = taskList.get(i);

@@ -14,7 +14,7 @@
 * the License.
 *@
 
-@(flowDefId: String, results: java.util.Map[IdUrlPair, java.util.Map[IdUrlPair, java.util.List[models.AppResult]]],
+@(flowDefPair: IdUrlPair, results: java.util.Map[IdUrlPair, java.util.Map[IdUrlPair, java.util.List[models.AppResult]]],
     idPairToJobNameMap: java.util.Map[IdUrlPair, String], flowExecTimeList: java.util.List[Long])
 
 @import com.linkedin.drelephant.analysis.Severity
@@ -35,7 +35,7 @@
 }
 
 @if(results != null && results.nonEmpty) {
-  @tags.panel(){ Flow History Results: <a href="@flowDefId" style="font-size:14px; color:#083d8d">@flowDefId</a>} {
+  @tags.panel(){ Flow History Results: <a href="@flowDefPair.getUrl" style="font-size:14px; color:#083d8d">@flowDefPair.getId</a>} {
 
     <script src="@routes.Assets.at("js/flowhistoryform.js")" type="text/javascript"></script>
     <script src="@routes.Assets.at("js/graphutility.js")" type="text/javascript"></script>
@@ -59,8 +59,8 @@
               <th style="width:200px">Flow Executions</th>
               @for((jobDefPair, jobName) <- idPairToJobNameMap) {
                 <th>
-                  <a href='/jobhistory?job-def-id=@helper.urlEncode(jobDefPair.getUrl)&select-graph-type=heuristics' data-toggle='tooltip'
-                  title='@jobDefPair.getUrl'>Job @{jobDefIndex = jobDefIndex + 1; jobDefIndex}<br>
+                  <a href='/jobhistory?job-def-id=@helper.urlEncode(jobDefPair.getId)&select-graph-type=heuristics' data-toggle='tooltip'
+                  title='@jobDefPair.getId'>Job @{jobDefIndex = jobDefIndex + 1; jobDefIndex}<br>
                   @if(jobName.length > 45) { @jobName.substring(0, 41)... } else { @jobName }
                   </a>
                 </th>

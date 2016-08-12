@@ -43,7 +43,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+
 import org.apache.commons.lang.StringUtils;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.log4j.Logger;
 import org.apache.spark.SparkMetricsAggregator;
 import org.w3c.dom.Document;
@@ -65,10 +67,12 @@ public class ElephantContext {
   private static final String FETCHERS_CONF = "FetcherConf.xml";
   private static final String HEURISTICS_CONF = "HeuristicConf.xml";
   private static final String JOB_TYPES_CONF = "JobTypeConf.xml";
+  private static final String GENERAL_CONF = "GeneralConf.xml";
 
   private final Map<String, List<String>> _heuristicGroupedNames = new HashMap<String, List<String>>();
   private List<HeuristicConfigurationData> _heuristicsConfData;
   private List<FetcherConfigurationData> _fetchersConfData;
+  private Configuration _generalConf;
   private List<AggregatorConfigurationData> _aggregatorConfData;
 
   private final Map<String, ApplicationType> _nameToType = new HashMap<String, ApplicationType>();
@@ -99,6 +103,8 @@ public class ElephantContext {
     loadFetchers();
     loadHeuristics();
     loadJobTypes();
+
+    loadGeneralConf();
 
     // It is important to configure supported types in the LAST step so that we could have information from all
     // configurable components.
@@ -295,6 +301,16 @@ public class ElephantContext {
   }
 
   /**
+   * Load in the GeneralConf.xml file as a configuration object for other objects to access
+   */
+  private void loadGeneralConf() {
+    logger.info("Loading configuration file " + GENERAL_CONF);
+
+    _generalConf = new Configuration();
+    _generalConf.addResource(this.getClass().getClassLoader().getResourceAsStream(GENERAL_CONF));
+  }
+
+  /**
    * Given an application type, return the currently bound heuristics
    *
    * @param type The application type
@@ -358,6 +374,15 @@ public class ElephantContext {
    */
   public ApplicationType getApplicationTypeForName(String typeName) {
     return _nameToType.get(typeName.toUpperCase());
+  }
+
+  /**
+   * Get the general configuration object.
+   *
+   * @return the genral configuration object.
+   */
+  public Configuration getGeneralConf() {
+    return _generalConf;
   }
 
   /**

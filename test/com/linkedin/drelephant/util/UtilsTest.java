@@ -23,7 +23,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+<<<<<<< HEAD
 import java.util.Set;
+=======
+import org.apache.hadoop.conf.Configuration;
+>>>>>>> master
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
@@ -126,6 +130,53 @@ public class UtilsTest {
   }
 
   @Test
+  public void testGetNonNegativeInt() {
+    Configuration conf = new Configuration();
+    conf.set("foo1", "100");
+    conf.set("foo2", "-100");
+    conf.set("foo3", "0");
+    conf.set("foo4", "0.5");
+    conf.set("foo5", "9999999999999999");
+    conf.set("foo6", "bar");
+
+    int defaultValue = 50;
+    assertEquals(100, Utils.getNonNegativeInt(conf, "foo1", defaultValue));
+    assertEquals(0, Utils.getNonNegativeInt(conf, "foo2", defaultValue));
+    assertEquals(0, Utils.getNonNegativeInt(conf, "foo3", defaultValue));
+    assertEquals(defaultValue, Utils.getNonNegativeInt(conf, "foo4", defaultValue));
+    assertEquals(defaultValue, Utils.getNonNegativeInt(conf, "foo5", defaultValue));
+    assertEquals(defaultValue, Utils.getNonNegativeInt(conf, "foo6", defaultValue));
+    assertEquals(defaultValue, Utils.getNonNegativeInt(conf, "foo7", defaultValue));
+  }
+
+  @Test
+  public void testGetNonNegativeLong() {
+    Configuration conf = new Configuration();
+
+    conf.set("foo1", "100");
+    conf.set("foo2", "-100");
+    conf.set("foo3", "0");
+    conf.set("foo4", "0.5");
+    conf.set("foo5", "9999999999999999");
+    conf.set("foo6", "bar");
+
+    long defaultValue = 50;
+    assertEquals(100, Utils.getNonNegativeLong(conf, "foo1", defaultValue));
+    assertEquals(0, Utils.getNonNegativeLong(conf, "foo2", defaultValue));
+    assertEquals(0, Utils.getNonNegativeLong(conf, "foo3", defaultValue));
+    assertEquals(defaultValue, Utils.getNonNegativeLong(conf, "foo4", defaultValue));
+    assertEquals(9999999999999999L, Utils.getNonNegativeLong(conf, "foo5", defaultValue));
+    assertEquals(defaultValue, Utils.getNonNegativeLong(conf, "foo6", defaultValue));
+    assertEquals(defaultValue, Utils.getNonNegativeLong(conf, "foo7", defaultValue));
+  }
+
+  @Test
+  public void testFormatStringOrNull() {
+    assertEquals("Hello world!", Utils.formatStringOrNull("%s %s!", "Hello", "world"));
+    assertEquals(null, Utils.formatStringOrNull("%s %s!", "Hello", null));
+  }
+ 
+  @Test 
   public void testGetDurationBreakdown() {
     long []durations = {13423,432344,23423562,23,324252,1132141414141L};
     assertEquals("0:00:13", Utils.getDurationBreakdown(durations[0]));

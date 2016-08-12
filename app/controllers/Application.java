@@ -18,15 +18,12 @@ package controllers;
 
 import com.avaje.ebean.ExpressionList;
 import com.avaje.ebean.Query;
-import com.fasterxml.jackson.core.JsonGenerationException;
-import com.fasterxml.jackson.databind.JsonMappingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import com.linkedin.drelephant.ElephantContext;
 import com.linkedin.drelephant.analysis.Metrics;
 import com.linkedin.drelephant.analysis.Severity;
-import com.linkedin.drelephant.configurations.heuristic.HeuristicConfigurationData;
 import com.linkedin.drelephant.util.Utils;
 
 import java.io.File;
@@ -34,10 +31,12 @@ import java.io.IOException;
 import java.lang.Override;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.text.ParseException;
+import java.text.ParsePosition;
+import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
@@ -48,6 +47,7 @@ import java.util.TreeSet;
 
 import models.AppHeuristicResult;
 import models.AppResult;
+<<<<<<< HEAD
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.Cluster;
 import org.apache.hadoop.mapreduce.Counters;
@@ -55,13 +55,19 @@ import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.JobID;
 import org.apache.hadoop.mapreduce.TaskReport;
 import org.apache.hadoop.mapreduce.TaskType;
+=======
+
+import org.apache.hadoop.conf.Configuration;
+>>>>>>> master
 import org.apache.http.client.utils.URLEncodedUtils;
 import org.apache.http.message.BasicNameValuePair;
 import org.apache.log4j.Logger;
+import org.joda.time.DateTime;
 import play.api.Play;
 import play.api.templates.Html;
 import play.data.DynamicForm;
 import play.data.Form;
+import play.db.ebean.Model;
 import play.libs.Json;
 import play.mvc.Controller;
 import play.mvc.Result;
@@ -104,6 +110,7 @@ public class Application extends Controller {
   public static final String FLOW_EXEC_ID = "flow-exec-id";
   public static final String JOB_DEF_ID = "job-def-id";
   public static final String USERNAME = "username";
+  public static final String QUEUE_NAME = "queue-name";
   public static final String SEVERITY = "severity";
   public static final String JOB_TYPE = "job-type";
   public static final String ANALYSIS = "analysis";
@@ -114,6 +121,9 @@ public class Application extends Controller {
   public static final String COMPARE_FLOW_ID1 = "flow-exec-id1";
   public static final String COMPARE_FLOW_ID2 = "flow-exec-id2";
   public static final String PAGE = "page";
+
+  // Configuration properties
+  private static final String SEARCH_MATCHES_PARTIAL_CONF = "drelephant.application.search.match.partial";
 
   private static long _lastFetch = 0;
   private static int _numJobsAnalyzed = 0;
@@ -158,6 +168,66 @@ public class Application extends Controller {
   }
 
   /**
+   * Returns the scheduler info id/url pair for the most recent app result that has an id like value
+   * (which can use % and _ SQL wild cards) for the specified field. Note that this is a pair rather
+   * than merely an ID/URL because for some schedulers (e.g. Airflow) they are not equivalent and
+   * usually the UI wants to display the ID with a link to the URL. While it is true that the URL
+   * can probably be derived from the ID in most cases, we would need scheduler specific logic which
+   * would be a mess.
+   */
+  private static IdUrlPair bestSchedulerInfoMatchLikeValue(String value, String schedulerIdField) {
+    String schedulerUrlField;
+    if (schedulerIdField.equals(AppResult.TABLE.FLOW_DEF_ID)) {
+      schedulerUrlField = AppResult.TABLE.FLOW_DEF_URL;
+    } else if (schedulerIdField.equals(AppResult.TABLE.FLOW_EXEC_ID)) {
+      schedulerUrlField = AppResult.TABLE.FLOW_EXEC_URL;
+    } else if (schedulerIdField.equals(AppResult.TABLE.JOB_DEF_ID)) {
+      schedulerUrlField = AppResult.TABLE.JOB_DEF_URL;
+    } else if (schedulerIdField.equals(AppResult.TABLE.JOB_EXEC_ID)) {
+      schedulerUrlField = AppResult.TABLE.JOB_EXEC_URL;
+    } else {
+      throw new RuntimeException(String.format("%s is not a valid scheduler info id field", schedulerIdField));
+    }
+    AppResult result = AppResult.find
+            .select(String.format("%s, %s", schedulerIdField, schedulerUrlField))
+            .where().like(schedulerIdField, value)
+            .order()
+            .desc(AppResult.TABLE.FINISH_TIME)
+            .setMaxRows(1)
+            .findUnique();
+    if (result != null) {
+      if (schedulerIdField.equals(AppResult.TABLE.FLOW_DEF_ID)) {
+        return new IdUrlPair(result.flowDefId, result.flowDefUrl);
+      } else if (schedulerIdField.equals(AppResult.TABLE.FLOW_EXEC_ID)) {
+        return new IdUrlPair(result.flowExecId, result.flowExecUrl);
+      } else if (schedulerIdField.equals(AppResult.TABLE.JOB_DEF_ID)) {
+        return new IdUrlPair(result.jobDefId, result.jobDefUrl);
+      } else if (schedulerIdField.equals(AppResult.TABLE.JOB_EXEC_ID)) {
+        return new IdUrlPair(result.jobExecId, result.jobExecUrl);
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Given a (possibly) partial scheduler info id, try to find the closest existing id.
+   */
+  private static IdUrlPair bestSchedulerInfoMatchGivenPartialId(String partialSchedulerInfoId, String schedulerInfoIdField) {
+    IdUrlPair schedulerInfoPair;
+    // check for exact match
+    schedulerInfoPair = bestSchedulerInfoMatchLikeValue(partialSchedulerInfoId, schedulerInfoIdField);
+    // check for suffix match if feature isn't disabled
+    if (schedulerInfoPair == null && ElephantContext.instance().getGeneralConf().getBoolean(SEARCH_MATCHES_PARTIAL_CONF, true)) {
+      schedulerInfoPair = bestSchedulerInfoMatchLikeValue(String.format("%s%%", partialSchedulerInfoId), schedulerInfoIdField);
+    }
+    // if we didn't find anything just give a buest guess
+    if (schedulerInfoPair == null) {
+      schedulerInfoPair = new IdUrlPair(partialSchedulerInfoId, "");
+    }
+    return schedulerInfoPair;
+  }
+
+  /**
    * Controls the Search Feature
    */
   public static Result search() {
@@ -167,8 +237,8 @@ public class Application extends Controller {
     if (appId.contains("job")) {
       appId = appId.replaceAll("job", "application");
     }
-    String flowExecId = form.get(FLOW_EXEC_ID);
-    flowExecId = (flowExecId != null) ? flowExecId.trim() : null;
+    String partialFlowExecId = form.get(FLOW_EXEC_ID);
+    partialFlowExecId = (partialFlowExecId != null) ? partialFlowExecId.trim() : null;
 
     // Search and display job details when job id or flow execution url is provided.
     if (!appId.isEmpty()) {
@@ -177,21 +247,18 @@ public class Application extends Controller {
           .fetch(AppResult.TABLE.APP_HEURISTIC_RESULTS + "." + AppHeuristicResult.TABLE.APP_HEURISTIC_RESULT_DETAILS,
               "*")
           .where()
-          .idEq(appId)
-          .findUnique();
-      if (result != null) {
-        return ok(searchPage.render(null, jobDetails.render(result)));
-      } else {
-        return ok(searchPage.render(null, jobDetails.render(null)));
-      }
-    } else if (flowExecId != null && !flowExecId.isEmpty()) {
-      List<AppResult> results = AppResult.find.select(AppResult.getSearchFields() + "," + AppResult.TABLE.JOB_EXEC_ID)
+          .idEq(appId).findUnique();
+      return ok(searchPage.render(null, jobDetails.render(result)));
+    } else if (Utils.isSet(partialFlowExecId)) {
+      IdUrlPair flowExecPair = bestSchedulerInfoMatchGivenPartialId(partialFlowExecId, AppResult.TABLE.FLOW_EXEC_ID);
+      List<AppResult> results = AppResult.find
+          .select(AppResult.getSearchFields() + "," + AppResult.TABLE.JOB_EXEC_ID)
           .fetch(AppResult.TABLE.APP_HEURISTIC_RESULTS, AppHeuristicResult.getSearchFields())
           .where()
-          .eq(AppResult.TABLE.FLOW_EXEC_ID, flowExecId)
+          .eq(AppResult.TABLE.FLOW_EXEC_ID, flowExecPair.getId())
           .findList();
       Map<IdUrlPair, List<AppResult>> map = groupJobs(results, GroupBy.JOB_EXECUTION_ID);
-      return ok(searchPage.render(null, flowDetails.render(flowExecId, map)));
+      return ok(searchPage.render(null, flowDetails.render(flowExecPair, map)));
     }
 
     // Prepare pagination of results
@@ -220,9 +287,10 @@ public class Application extends Controller {
     if (results.isEmpty() || currentPage > paginationStats.computePaginationBarEndIndex(results.size())) {
       return ok(searchPage.render(null, jobDetails.render(null)));
     } else {
-      return ok(searchPage.render(paginationStats, searchResults.render("Results",
-          results.subList((currentPage - paginationBarStartIndex) * pageLength,
-              Math.min(results.size(), (currentPage - paginationBarStartIndex + 1) * pageLength)))));
+      List<AppResult> resultsToDisplay = results.subList((currentPage - paginationBarStartIndex) * pageLength,
+              Math.min(results.size(), (currentPage - paginationBarStartIndex + 1) * pageLength));
+      return ok(searchPage.render(paginationStats, searchResults.render(
+              String.format("Results: Showing %,d of %,d", resultsToDisplay.size(), query.findRowCount()), resultsToDisplay)));
     }
   }
 
@@ -255,6 +323,9 @@ public class Application extends Controller {
     String username = form.get(USERNAME);
     username = username != null ? username.trim().toLowerCase() : null;
     searchParams.put(USERNAME, username);
+    String queuename = form.get(QUEUE_NAME);
+    queuename = queuename != null ? queuename.trim().toLowerCase() : null;
+    searchParams.put(QUEUE_NAME, queuename);
     searchParams.put(SEVERITY, form.get(SEVERITY));
     searchParams.put(JOB_TYPE, form.get(JOB_TYPE));
     searchParams.put(ANALYSIS, form.get(ANALYSIS));
@@ -283,6 +354,11 @@ public class Application extends Controller {
     String username = searchParams.get(USERNAME);
     if (Utils.isSet(username)) {
       query = query.eq(AppResult.TABLE.USERNAME, username);
+    }
+
+    String queuename = searchParams.get(QUEUE_NAME);
+    if (Utils.isSet(queuename)) {
+      query = query.eq(AppResult.TABLE.QUEUE_NAME, queuename);
     }
     String jobType = searchParams.get(JOB_TYPE);
     if (Utils.isSet(jobType)) {
@@ -344,28 +420,27 @@ public class Application extends Controller {
    */
   public static Result compare() {
     DynamicForm form = Form.form().bindFromRequest(request());
-    String flowExecId1 = form.get(COMPARE_FLOW_ID1);
-    flowExecId1 = (flowExecId1 != null) ? flowExecId1.trim() : null;
-    String flowExecId2 = form.get(COMPARE_FLOW_ID2);
-    flowExecId2 = (flowExecId2 != null) ? flowExecId2.trim() : null;
+    String partialFlowExecId1 = form.get(COMPARE_FLOW_ID1);
+    partialFlowExecId1 = (partialFlowExecId1 != null) ? partialFlowExecId1.trim() : null;
+    String partialFlowExecId2 = form.get(COMPARE_FLOW_ID2);
+    partialFlowExecId2 = (partialFlowExecId2 != null) ? partialFlowExecId2.trim() : null;
 
     List<AppResult> results1 = null;
     List<AppResult> results2 = null;
-    if (flowExecId1 != null && !flowExecId1.isEmpty() && flowExecId2 != null && !flowExecId2.isEmpty()) {
-      results1 = AppResult.find.select(
-          AppResult.getSearchFields() + "," + AppResult.TABLE.JOB_DEF_ID + "," + AppResult.TABLE.JOB_DEF_URL + ","
-              + AppResult.TABLE.FLOW_EXEC_ID + "," + AppResult.TABLE.FLOW_EXEC_URL)
-          .where()
-          .eq(AppResult.TABLE.FLOW_EXEC_ID, flowExecId1)
-          .setMaxRows(100)
+    if (partialFlowExecId1 != null && !partialFlowExecId1.isEmpty() && partialFlowExecId2 != null && !partialFlowExecId2.isEmpty()) {
+      IdUrlPair flowExecIdPair1 = bestSchedulerInfoMatchGivenPartialId(partialFlowExecId1, AppResult.TABLE.FLOW_EXEC_ID);
+      IdUrlPair flowExecIdPair2 = bestSchedulerInfoMatchGivenPartialId(partialFlowExecId2, AppResult.TABLE.FLOW_EXEC_ID);
+      results1 = AppResult.find
+          .select(AppResult.getSearchFields() + "," + AppResult.TABLE.JOB_DEF_ID + "," + AppResult.TABLE.JOB_DEF_URL
+              + "," + AppResult.TABLE.FLOW_EXEC_ID + "," + AppResult.TABLE.FLOW_EXEC_URL)
+          .where().eq(AppResult.TABLE.FLOW_EXEC_ID, flowExecIdPair1.getId()).setMaxRows(100)
           .fetch(AppResult.TABLE.APP_HEURISTIC_RESULTS, AppHeuristicResult.getSearchFields())
           .findList();
-      results2 = AppResult.find.select(
-          AppResult.getSearchFields() + "," + AppResult.TABLE.JOB_DEF_ID + "," + AppResult.TABLE.JOB_DEF_URL + ","
-              + AppResult.TABLE.FLOW_EXEC_ID + "," + AppResult.TABLE.FLOW_EXEC_URL)
-          .where()
-          .eq(AppResult.TABLE.FLOW_EXEC_ID, flowExecId2)
-          .setMaxRows(100)
+      results2 = AppResult.find
+          .select(
+              AppResult.getSearchFields() + "," + AppResult.TABLE.JOB_DEF_ID + "," + AppResult.TABLE.JOB_DEF_URL + ","
+                  + AppResult.TABLE.FLOW_EXEC_ID + "," + AppResult.TABLE.FLOW_EXEC_URL)
+          .where().eq(AppResult.TABLE.FLOW_EXEC_ID, flowExecIdPair2.getId()).setMaxRows(100)
           .fetch(AppResult.TABLE.APP_HEURISTIC_RESULTS, AppHeuristicResult.getSearchFields())
           .findList();
     }
@@ -380,10 +455,9 @@ public class Application extends Controller {
    * @param results2 The list of jobs under flow execution 2
    * @return A map of Job Urls to the list of jobs corresponding to the 2 flow execution urls
    */
-  private static Map<IdUrlPair, Map<IdUrlPair, List<AppResult>>> compareFlows(List<AppResult> results1,
-      List<AppResult> results2) {
-    Map<IdUrlPair, Map<IdUrlPair, List<AppResult>>> jobDefMap =
-        new HashMap<IdUrlPair, Map<IdUrlPair, List<AppResult>>>();
+  private static Map<IdUrlPair, Map<IdUrlPair, List<AppResult>>> compareFlows(List<AppResult> results1, List<AppResult> results2) {
+    
+    Map<IdUrlPair, Map<IdUrlPair, List<AppResult>>> jobDefMap = new HashMap<IdUrlPair, Map<IdUrlPair, List<AppResult>>>();
 
     if (results1 != null && !results1.isEmpty() && results2 != null && !results2.isEmpty()) {
 
@@ -426,8 +500,8 @@ public class Application extends Controller {
    */
   public static Result flowHistory() {
     DynamicForm form = Form.form().bindFromRequest(request());
-    String flowDefId = form.get(FLOW_DEF_ID);
-    flowDefId = (flowDefId != null) ? flowDefId.trim() : null;
+    String partialFlowDefId = form.get(FLOW_DEF_ID);
+    partialFlowDefId = (partialFlowDefId != null) ? partialFlowDefId.trim() : null;
 
     boolean hasSparkJob = false;
 
@@ -438,9 +512,10 @@ public class Application extends Controller {
       graphType = "resources";
     }
 
-    if (flowDefId == null || flowDefId.isEmpty()) {
-      return ok(flowHistoryPage.render(flowDefId, graphType, flowHistoryResults.render(null, null, null, null)));
+    if (!Utils.isSet(partialFlowDefId)) {
+      return ok(flowHistoryPage.render(partialFlowDefId, graphType, flowHistoryResults.render(null, null, null, null)));
     }
+    IdUrlPair flowDefPair = bestSchedulerInfoMatchGivenPartialId(partialFlowDefId, AppResult.TABLE.FLOW_DEF_ID);
 
     List<AppResult> results;
 
@@ -451,7 +526,7 @@ public class Application extends Controller {
           AppResult.getSearchFields() + "," + AppResult.TABLE.FLOW_EXEC_ID + "," + AppResult.TABLE.FLOW_EXEC_URL + ","
               + AppResult.TABLE.JOB_DEF_ID + "," + AppResult.TABLE.JOB_DEF_URL + "," + AppResult.TABLE.JOB_NAME)
           .where()
-          .eq(AppResult.TABLE.FLOW_DEF_ID, flowDefId)
+          .eq(AppResult.TABLE.FLOW_DEF_ID, flowDefPair.getId())
           .order()
           .desc(AppResult.TABLE.FINISH_TIME)
           .setMaxRows(JOB_HISTORY_LIMIT)
@@ -463,7 +538,7 @@ public class Application extends Controller {
           AppResult.getSearchFields() + "," + AppResult.TABLE.FLOW_EXEC_ID + "," + AppResult.TABLE.FLOW_EXEC_URL + ","
               + AppResult.TABLE.JOB_DEF_ID + "," + AppResult.TABLE.JOB_DEF_URL + "," + AppResult.TABLE.JOB_NAME)
           .where()
-          .eq(AppResult.TABLE.FLOW_DEF_ID, flowDefId)
+          .eq(AppResult.TABLE.FLOW_DEF_ID, flowDefPair.getId())
           .order()
           .desc(AppResult.TABLE.FINISH_TIME)
           .setMaxRows(JOB_HISTORY_LIMIT)
@@ -471,7 +546,7 @@ public class Application extends Controller {
           .findList();
     }
     if (results.size() == 0) {
-      return notFound("Unable to find record on flow url: " + flowDefId);
+      return notFound("Unable to find record for flow def id: " + flowDefPair.getId());
     }
 
     for (AppResult result : results) {
@@ -510,15 +585,15 @@ public class Application extends Controller {
     }
 
     if (graphType.equals("heuristics")) {
-      return ok(flowHistoryPage.render(flowDefId, graphType,
-          flowHistoryResults.render(flowDefId, executionMap, idPairToJobNameMap, flowExecTimeList)));
+      return ok(flowHistoryPage.render(flowDefPair.getId(), graphType,
+          flowHistoryResults.render(flowDefPair, executionMap, idPairToJobNameMap, flowExecTimeList)));
     } else if (graphType.equals("resources") || graphType.equals("time")) {
       if (hasSparkJob) {
         return notFound("Cannot plot graph for " + graphType + " since it contains a spark job. " + graphType
             + " graphs are not supported for spark right now");
       } else {
-        return ok(flowHistoryPage.render(flowDefId, graphType,
-            flowMetricsHistoryResults.render(flowDefId, graphType, executionMap, idPairToJobNameMap,
+        return ok(flowHistoryPage.render(flowDefPair.getId(), graphType,
+            flowMetricsHistoryResults.render(flowDefPair, graphType, executionMap, idPairToJobNameMap,
                 flowExecTimeList)));
       }
     }
@@ -531,8 +606,8 @@ public class Application extends Controller {
    */
   public static Result jobHistory() {
     DynamicForm form = Form.form().bindFromRequest(request());
-    String jobDefId = form.get(JOB_DEF_ID);
-    jobDefId = (jobDefId != null) ? jobDefId.trim() : null;
+    String partialJobDefId = form.get(JOB_DEF_ID);
+    partialJobDefId = (partialJobDefId != null) ? partialJobDefId.trim() : null;
 
     boolean hasSparkJob = false;
     // get the graph type
@@ -542,9 +617,10 @@ public class Application extends Controller {
       graphType = "resources";
     }
 
-    if (jobDefId == null || jobDefId.isEmpty()) {
-      return ok(jobHistoryPage.render(jobDefId, graphType, jobHistoryResults.render(null, null, -1, null)));
+    if (!Utils.isSet(partialJobDefId)) {
+      return ok(jobHistoryPage.render(partialJobDefId, graphType, jobHistoryResults.render(null, null, -1, null)));
     }
+    IdUrlPair jobDefPair = bestSchedulerInfoMatchGivenPartialId(partialJobDefId, AppResult.TABLE.JOB_DEF_ID);
 
     List<AppResult> results;
 
@@ -553,7 +629,7 @@ public class Application extends Controller {
       results = AppResult.find.select(
           AppResult.getSearchFields() + "," + AppResult.TABLE.FLOW_EXEC_ID + "," + AppResult.TABLE.FLOW_EXEC_URL)
           .where()
-          .eq(AppResult.TABLE.JOB_DEF_ID, jobDefId)
+          .eq(AppResult.TABLE.JOB_DEF_ID, jobDefPair.getId())
           .order()
           .desc(AppResult.TABLE.FINISH_TIME)
           .setMaxRows(JOB_HISTORY_LIMIT)
@@ -563,7 +639,7 @@ public class Application extends Controller {
       results = AppResult.find.select(
           AppResult.getSearchFields() + "," + AppResult.TABLE.FLOW_EXEC_ID + "," + AppResult.TABLE.FLOW_EXEC_URL)
           .where()
-          .eq(AppResult.TABLE.JOB_DEF_ID, jobDefId)
+          .eq(AppResult.TABLE.JOB_DEF_ID, jobDefPair.getId())
           .order()
           .desc(AppResult.TABLE.FINISH_TIME)
           .setMaxRows(JOB_HISTORY_LIMIT)
@@ -580,7 +656,7 @@ public class Application extends Controller {
     }
 
     if (results.size() == 0) {
-      return notFound("Unable to find record on job url: " + jobDefId);
+      return notFound("Unable to find record for job def id: " + jobDefPair.getId());
     }
     Map<IdUrlPair, List<AppResult>> flowExecIdToJobsMap =
         limitHistoryResults(groupJobs(results, GroupBy.FLOW_EXECUTION_ID), results.size(), MAX_HISTORY_LIMIT);
@@ -611,14 +687,14 @@ public class Application extends Controller {
     }
 
     if (graphType.equals("heuristics")) {
-      return ok(jobHistoryPage.render(jobDefId, graphType,
-          jobHistoryResults.render(jobDefId, executionMap, maxStages, flowExecTimeList)));
+      return ok(jobHistoryPage.render(jobDefPair.getId(), graphType,
+          jobHistoryResults.render(jobDefPair, executionMap, maxStages, flowExecTimeList)));
     } else if (graphType.equals("resources") || graphType.equals("time")) {
       if (hasSparkJob) {
         return notFound("Resource and time graph are not supported for spark right now");
       } else {
-        return ok(jobHistoryPage.render(jobDefId, graphType,
-            jobMetricsHistoryResults.render(jobDefId, graphType, executionMap, maxStages, flowExecTimeList)));
+        return ok(jobHistoryPage.render(jobDefPair.getId(), graphType,
+            jobMetricsHistoryResults.render(jobDefPair, graphType, executionMap, maxStages, flowExecTimeList)));
       }
     }
 
@@ -642,8 +718,9 @@ public class Application extends Controller {
    * @param execLimit The upper limit on the number of executions to be displayed.
    * @return A map after applying the limit.
    */
-  private static Map<IdUrlPair, List<AppResult>> limitHistoryResults(Map<IdUrlPair, List<AppResult>> map, int size,
+  private static Map<IdUrlPair, List<AppResult>> limitHistoryResults(Map<IdUrlPair, List<AppResult>> map,int size,
       int execLimit) {
+    
     Map<IdUrlPair, List<AppResult>> resultMap = new LinkedHashMap<IdUrlPair, List<AppResult>>();
 
     int limit;
@@ -1271,6 +1348,41 @@ public class Application extends Controller {
   }
 
   /**
+   *
+   * @param startTime - beginning of the time window
+   * @param endTime - end of the time window
+   * @return Json of resourceUsage data for each user for the given time window
+   *    eg. [{"user":"bmr","resourceUsed":168030208,"resourceWasted":27262750},
+   *        {"user":"payments","resourceUsed":18432,"resourceWasted":3447},
+   *        {"user":"myu","resourceUsed":558211072,"resourceWasted":81573818}]
+   */
+  public static Result restResourceUsageDataByUser(String startTime, String endTime) {
+    try {
+      JsonArray datasets = new JsonArray();
+      if(startTime.length() != endTime.length() ||
+          (startTime.length() != 10 && startTime.length() != 13)) {
+        return status(300);
+      }
+      SimpleDateFormat tf = null ;
+      if( startTime.length() == 10 ) {
+         tf = new SimpleDateFormat("yyyy-MM-dd");
+      }
+      else {
+        tf = new SimpleDateFormat("yyyy-MM-dd-HH");
+      }
+      Date start = tf.parse(startTime);
+      Date end = tf.parse(endTime);
+      Collection<AppResourceUsageData> result = getUserResourceUsage(start, end);
+
+      return ok(new Gson().toJson(result));
+    }
+    catch(ParseException ex) {
+      return status(300,"Invalid datetime format : " + ex.getMessage());
+    }
+  }
+
+
+  /**
    * Rest data to plot flot history graph using time and resource metrics. While plotting the flow history
    * graph an ajax call is made to this to fetch the graph data.
    * [
@@ -1415,12 +1527,41 @@ public class Application extends Controller {
         .order()
         .desc(AppResult.TABLE.FINISH_TIME)
         .setMaxRows(JOB_HISTORY_LIMIT)
-        // The 2nd and 3rd table are not required for plotting the graph
-        //.fetch(AppResult.TABLE.APP_HEURISTIC_RESULTS, AppHeuristicResult.getSearchFields())
-        //.fetch(AppResult.TABLE.APP_HEURISTIC_RESULTS + "."
-        //    + AppHeuristicResult.TABLE.APP_HEURISTIC_RESULT_DETAILS, "*")
         .findList();
 
     return results;
+  }
+
+  private static class AppResourceUsageData {
+    String user;
+    long resourceUsed;
+    long resourceWasted;
+  }
+
+  /**
+   * Returns the list of users with their resourceUsed and resourceWasted Data for the given time range
+   * @return list of AppResourceUsageData
+   **/
+  private static Collection<AppResourceUsageData> getUserResourceUsage(Date start, Date end) {
+    long resourceUsed = 0;
+    Map<String, AppResourceUsageData> userResourceUsage = new HashMap<String, AppResourceUsageData>();
+    // Fetch all the appresults for the given time range [startTime, endTime).
+    List<AppResult> results = AppResult.find.select("*")
+        .where()
+        .ge(AppResult.TABLE.START_TIME, start.getTime())
+        .lt(AppResult.TABLE.START_TIME, end.getTime()).findList();
+
+    // aggregate the resourceUsage data at the user level
+    for (AppResult result : results) {
+      if (!userResourceUsage.containsKey(result.username)) {
+        AppResourceUsageData data = new AppResourceUsageData();
+        data.user = result.username;
+        userResourceUsage.put(result.username, data);
+      }
+      userResourceUsage.get(result.username).resourceUsed += result.resourceUsed;
+      userResourceUsage.get(result.username).resourceWasted += result.resourceWasted;
+    }
+
+    return userResourceUsage.values();
   }
 }

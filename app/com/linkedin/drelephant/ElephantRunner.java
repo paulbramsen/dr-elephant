@@ -17,6 +17,7 @@
 package com.linkedin.drelephant;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
+
 import com.linkedin.drelephant.analysis.AnalyticJob;
 import com.linkedin.drelephant.analysis.AnalyticJobGenerator;
 import com.linkedin.drelephant.analysis.HDFSContext;
@@ -25,6 +26,8 @@ import com.linkedin.drelephant.analysis.AnalyticJobGeneratorHadoop2;
 import com.linkedin.drelephant.analysis.HadoopSystemContext;
 import com.linkedin.drelephant.math.Statistics;
 import com.linkedin.drelephant.security.HadoopSecurity;
+
+import controllers.MetricsController;
 import java.io.IOException;
 import java.security.PrivilegedAction;
 import java.util.ArrayList;
@@ -35,6 +38,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -80,7 +84,6 @@ public class ElephantRunner implements Runnable {
   private long _fetchLag = DEFAULT_FETCH_LAG;
 
   private final HadoopSecurity _hadoopSecurity;
-  private final Configuration _configuration;
 
   // Executor for SUCCEEDED and FAILED jobs
   private ScheduledThreadPoolExecutor _completedJobThreadPoolExecutor;
@@ -95,9 +98,26 @@ public class ElephantRunner implements Runnable {
 
   public ElephantRunner() {
     _hadoopSecurity = new HadoopSecurity();
-    _configuration = new Configuration();
     _analyticJobGenerator = new AnalyticJobGeneratorHadoop2();
   }
+  >>>>>>>> ???
+  private static final long FETCH_INTERVAL = 60 * 1000;     // Interval between fetches
+  private static final long RETRY_INTERVAL = 60 * 1000;     // Interval between retries
+  private static final int EXECUTOR_NUM = 5;                // The number of executor threads to analyse the jobs
+
+  private static final String FETCH_INTERVAL_KEY = "drelephant.analysis.fetch.interval";
+  private static final String RETRY_INTERVAL_KEY = "drelephant.analysis.retry.interval";
+  private static final String EXECUTOR_NUM_KEY = "drelephant.analysis.thread.count";
+
+  private AtomicBoolean _running = new AtomicBoolean(true);
+  private long lastRun;
+  private long _fetchInterval;
+  private long _retryInterval;
+  private int _executorNum;
+  private HadoopSecurity _hadoopSecurity;
+  private AnalyticJobGenerator _analyticJobGenerator;
+  >>>>>>> ????
+
 
   @Override
   public void run() {
@@ -109,6 +129,22 @@ public class ElephantRunner implements Runnable {
       _hadoopSecurity.doAs(new PrivilegedAction<Void>() {
         @Override
         public Void run() {
+          HDFSContext.load();
+          loadGeneralConfiguration();
+          loadAnalyticJobGenerator();
+          ElephantContext.init();
+
+          // Initialize the metrics registries.
+          MetricsController.init();
+
+          logger.info("executor num is " + _executorNum);
+          if (_executorNum < 1) {
+            throw new RuntimeException("Must have at least 1 worker thread.");
+          }
+          ThreadFactory factory = new ThreadFactoryBuilder().setNameFormat("dr-el-executor-thread-%d").build();
+          _threadPoolExecutor = new ThreadPoolExecutor(_executorNum, _executorNum, 0L, TimeUnit.MILLISECONDS,
+                  new LinkedBlockingQueue<Runnable>(), factory);
+
           while (_running.get() && !Thread.currentThread().isInterrupted()) {
             _currentTime = System.currentTimeMillis();
             _analyticJobGenerator.updateResourceManagerAddresses();
@@ -118,11 +154,38 @@ public class ElephantRunner implements Runnable {
               _hadoopSecurity.checkLogin();
             } catch (IOException e) {
               logger.info("Error with hadoop kerberos login", e);
+<<<<<<< HEAD
               waitInterval(_fetchInterval);
               continue;
             }
 
             fetchApplications(_lastTime + 1, _currentTime);
+=======
+              //Wait for a while before retry
+              waitInterval(_retryInterval);
+              continue;
+            }
+
+            List<AnalyticJob> todos;
+            try {
+              todos = _analyticJobGenerator.fetchAnalyticJobs();
+            } catch (Exception e) {
+              logger.error("Error fetching job list. Try again later...", e);
+              //Wait for a while before retry
+              waitInterval(_retryInterval);
+              continue;
+            }
+
+            for (AnalyticJob analyticJob : todos) {
+              _threadPoolExecutor.submit(new ExecutorJob(analyticJob));
+            }
+
+            int queueSize = _threadPoolExecutor.getQueue().size();
+            MetricsController.setQueueSize(queueSize);
+            logger.info("Job queue size is " + queueSize);
+
+            //Wait for a while before next fetch
+>>>>>>> master
             waitInterval(_fetchInterval);
           }
           logger.info("Main thread is terminated.");
@@ -143,7 +206,7 @@ public class ElephantRunner implements Runnable {
     }
 
     try {
-      _analyticJobGenerator.configure(_configuration);
+      _analyticJobGenerator.configure(ElephantContext.instance().getGeneralConf());
     } catch (Exception e) {
       logger.error("Error occurred when configuring the analysis provider.", e);
       throw new RuntimeException(e);
@@ -159,15 +222,19 @@ public class ElephantRunner implements Runnable {
    * Load all the properties from GeneralConf.xml
    */
   private void loadGeneralConfiguration() {
-    _configuration.addResource(this.getClass().getClassLoader().getResourceAsStream("GeneralConf.xml"));
+    Configuration configuration = ElephantContext.instance().getGeneralConf();
 
-    _completedExecutorCount = getLongFromConf(_configuration, COMPLETED_JOB_POOL_SIZE_KEY, DEFAULT_COMPLETED_JOB_POOL_SIZE);
-    _runningExecutorCount = getLongFromConf(_configuration, RUNNING_JOB_POOL_SIZE_KEY, DEFAULT_RUNNING_JOB_POOL_SIZE);
+    _completedExecutorCount = getLongFromConf(configuration, COMPLETED_JOB_POOL_SIZE_KEY, DEFAULT_COMPLETED_JOB_POOL_SIZE);
+    _runningExecutorCount = getLongFromConf(configuration, RUNNING_JOB_POOL_SIZE_KEY, DEFAULT_RUNNING_JOB_POOL_SIZE);
 
-    _fetchInterval = getLongFromConf(_configuration, FETCH_INTERVAL_KEY, DEFAULT_FETCH_INTERVAL);
-    _fetchLag = getLongFromConf(_configuration, FETCH_LAG_KEY, DEFAULT_FETCH_LAG);
+    _fetchInterval = getLongFromConf(configuration, FETCH_INTERVAL_KEY, DEFAULT_FETCH_INTERVAL);
+    _fetchLag = getLongFromConf(configuration, FETCH_LAG_KEY, DEFAULT_FETCH_LAG);
 
-    _runningJobUpdateInterval = getLongFromConf(_configuration, RUNNING_JOB_UPDATE_INTERVAL_KEY,
+    >>>>>>> ????
+    _retryInterval = Utils.getNonNegativeLong(configuration, RETRY_INTERVAL_KEY, RETRY_INTERVAL);
+    >>>>>>> ????
+
+    _runningJobUpdateInterval = getLongFromConf(configuration, RUNNING_JOB_UPDATE_INTERVAL_KEY,
         DEFAULT_RUNNING_JOB_UPDATE_INTERVAL);
   }
 
@@ -268,17 +335,27 @@ public class ElephantRunner implements Runnable {
     _lastTime = to;
   }
 
+ElephantContext.instance().getGeneralConf()
   private class CompletedExecutorJob implements Runnable {
 
     private AnalyticJob _analyticJob;
 
     CompletedExecutorJob(AnalyticJob analyticJob) {
       this._analyticJob = analyticJob;
+=======
+  private class ExecutorJob implements Runnable {
+
+    private AnalyticJob _analyticJob;
+
+    ExecutorJob(AnalyticJob analyticJob) {
+      _analyticJob = analyticJob;
+>>>>>>> master
     }
 
     @Override
     public void run() {
       try {
+<<<<<<< HEAD
         long analysisStartTimeMillis = System.currentTimeMillis();
         Job job = getJobFromCluster(_analyticJob);
         _analyticJob.setJobStatus(job.getJobState().name()).setSeverity(0);
@@ -305,14 +382,31 @@ public class ElephantRunner implements Runnable {
           throw new RuntimeException(_analyticJob.getAppId() + " is in " + jobState.name() + " state. This should not"
               + " happen. We consider only Succeeded and Failed jobs in Completed Jobs Queue");
         }
+=======
+        String analysisName = String.format("%s %s", _analyticJob.getAppType().getName(), _analyticJob.getAppId());
+        long analysisStartTimeMillis = System.currentTimeMillis();
+        logger.info(String.format("Analyzing %s", analysisName));
+        AppResult result = _analyticJob.getAnalysis();
+        result.save();
+        long processingTime = System.currentTimeMillis() - analysisStartTimeMillis;
+        logger.info(String.format("Analysis of %s took %sms", analysisName, processingTime));
+        MetricsController.setJobProcessingTime(processingTime);
+        MetricsController.markProcessedJobs();
+
+>>>>>>> master
       } catch (InterruptedException e) {
         logger.info("Thread interrupted");
         logger.info(e.getMessage());
         logger.info(ExceptionUtils.getStackTrace(e));
+<<<<<<< HEAD
+=======
+
+>>>>>>> master
         Thread.currentThread().interrupt();
       } catch (Exception e) {
         logger.error(e.getMessage());
         logger.error(ExceptionUtils.getStackTrace(e));
+<<<<<<< HEAD
         retryOrDrop(_analyticJob);
       }
     }
@@ -355,6 +449,17 @@ public class ElephantRunner implements Runnable {
             } else {
               result.update();
             }
+=======
+
+        if (_analyticJob != null && _analyticJob.retry()) {
+          logger.error("Add analytic job id [" + _analyticJob.getAppId() + "] into the retry list.");
+          _analyticJobGenerator.addIntoRetries(_analyticJob);
+        } else {
+          if (_analyticJob != null) {
+            MetricsController.markSkippedJob();
+            logger.error("Drop the analytic job. Reason: reached the max retries for application id = ["
+                    + _analyticJob.getAppId() + "].");
+>>>>>>> master
           }
         } else {
           // Ignore Job State

@@ -15,6 +15,7 @@
   the License.
 -->
 
+<<<<<<< HEAD
 <!-- General Configurations -->
 
 <configuration>
@@ -42,5 +43,28 @@
     <name>drelephant.analysis.realtime.update.interval</name>
     <value>3000</value>
     <description>How frequently running jobs should be analysed. (in millisec)</description>
+=======
+<!-- General configurations -->
+<configuration>
+  <property>
+    <name>drelephant.analysis.thread.count</name>
+    <value>3</value>
+    <description>Number of threads to analyze the completed jobs</description>
+  </property>
+  <property>
+    <name>drelephant.analysis.fetch.interval</name>
+    <value>60000</value>
+    <description>Interval between fetches in milliseconds</description>
+  </property>
+  <property>
+    <name>drelephant.analysis.retry.interval</name>
+    <value>60000</value>
+    <description>Interval between retries in milliseconds</description>
+  </property>
+  <property>
+    <name>drelephant.application.search.match.partial</name>
+    <value>true</value>
+    <description>If this property is "false", search will only make exact matches</description>
+>>>>>>> master
   </property>
 </configuration>

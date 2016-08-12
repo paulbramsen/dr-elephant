@@ -32,10 +32,14 @@ import javax.script.ScriptException;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
+import org.apache.hadoop.conf.Configuration;
 import models.AppResult;
 import org.apache.commons.io.FileUtils;
 import org.apache.log4j.Logger;
 import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 import play.Play;
 import java.util.List;
@@ -316,7 +320,95 @@ public final class Utils {
   }
 
   /**
-   * Returns the total resources used by the job list
+   * Get non negative int value from Configuration.
+   *
+   * If the value is not set or not an integer, the provided default value is returned.
+   * If the value is negative, 0 is returned.
+   *
+   * @param conf Configuration to be extracted
+   * @param key property name
+   * @param defaultValue default value
+   * @return non negative int value
+   */
+  public static int getNonNegativeInt(Configuration conf, String key, int defaultValue) {
+    try {
+      int value = conf.getInt(key, defaultValue);
+      if (value < 0) {
+        value = 0;
+        logger.warn("Configuration " + key + " is negative. Resetting it to 0");
+      }
+      return value;
+    } catch (NumberFormatException e) {
+      logger.error("Invalid configuration " + key + ". Value is " + conf.get(key)
+              + ". Resetting it to default value: " + defaultValue);
+      return defaultValue;
+    }
+  }
+
+  /**
+   * Get non negative long value from Configuration.
+   *
+   * If the value is not set or not a long, the provided default value is returned.
+   * If the value is negative, 0 is returned.
+   *
+   * @param conf Configuration to be extracted
+   * @param key property name
+   * @param defaultValue default value
+   * @return non negative long value
+   */
+  public static long getNonNegativeLong(Configuration conf, String key, long defaultValue) {
+    try {
+      long value = conf.getLong(key, defaultValue);
+      if (value < 0) {
+        value = 0;
+        logger.warn("Configuration " + key + " is negative. Resetting it to 0");
+      }
+      return value;
+    } catch (NumberFormatException e) {
+      logger.error("Invalid configuration " + key + ". Value is " + conf.get(key)
+              + ". Resetting it to default value: " + defaultValue);
+      return defaultValue;
+    }
+  }
+
+  /**
+   * Return the formatted string unless one of the args is null in which case null is returned
+   *
+   * @param formatString the standard Java format string
+   * @param args objects to put in the format string
+   * @return formatted String or null
+   */
+  public static String formatStringOrNull(String formatString, Object... args) {
+    for (Object o : args) {
+      if (o == null) {
+        return null;
+      }
+    }
+    return String.format(formatString, args);
+  }
+
+  /**
+   * Given a configuration element, extract the params map.
+   *
+   * @param confElem the configuration element
+   * @return the params map or an empty map if one can't be found
+   */
+  public static Map<String, String> getConfigurationParameters(Element confElem) {
+    Map<String, String> paramsMap = new HashMap<String, String>();
+    Node paramsNode = confElem.getElementsByTagName("params").item(0);
+    if (paramsNode != null) {
+      NodeList paramsList = paramsNode.getChildNodes();
+      for (int j = 0; j < paramsList.getLength(); j++) {
+        Node paramNode = paramsList.item(j);
+        if (paramNode != null && !paramsMap.containsKey(paramNode.getNodeName())) {
+          paramsMap.put(paramNode.getNodeName(), paramNode.getTextContent());
+        }
+      }
+    }
+    return paramsMap;
+  }
+   
+  /* Returns the total resources used by the job list
    * @param resultList The job lsit
    * @return The total resources used by the job list
    */

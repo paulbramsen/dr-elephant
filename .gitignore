@@ -49,6 +49,8 @@ target
 logs
 RUNNING_PID
 
+# macOS
+.DS_Store
 
 *.jar
 

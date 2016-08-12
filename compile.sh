@@ -84,6 +84,7 @@ cd ${project_root}
 
 start_script=${project_root}/scripts/start.sh
 stop_script=${project_root}/scripts/stop.sh
+app_conf=${project_root}/app-conf
 
 # Echo the value of pwd in the script so that it is clear what is being removed.
 rm -rf ${project_root}/dist
@@ -113,8 +114,12 @@ cp $start_script ${DIST_NAME}/bin/
 
 cp $stop_script ${DIST_NAME}/bin/
 
+<<<<<<< HEAD
 # Copy the mysql evolution files to default
 cp ${DIST_NAME}/conf/evolutions/mysql/* ${DIST_NAME}/conf/evolutions/default
+=======
+cp -r $app_conf ${DIST_NAME}
+>>>>>>> master
 
 zip -r ${DIST_NAME}.zip ${DIST_NAME}
 

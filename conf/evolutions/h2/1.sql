@@ -39,9 +39,7 @@ CREATE TABLE yarn_app_result (
   flow_exec_url    VARCHAR(800)  NOT NULL DEFAULT ''   COMMENT 'A url to the flow execution on the scheduler',
   job_def_url      VARCHAR(800)  NOT NULL DEFAULT ''   COMMENT 'A url to the job definition on the scheduler',
   flow_def_url     VARCHAR(800)  NOT NULL DEFAULT ''   COMMENT 'A url to the flow definition on the scheduler',
-  resource_used    BIGINT        UNSIGNED DEFAULT 0    COMMENT 'The resources used by the job in MB Seconds',
-  resource_wasted  BIGINT        UNSIGNED DEFAULT 0    COMMENT 'The resources wasted by the job in MB Seconds',
-  total_delay      BIGINT        UNSIGNED DEFAULT 0    COMMENT 'The total delay in starting of mappers and reducers',
+
   PRIMARY KEY (id)
 );
 

@@ -14,7 +14,7 @@
 * the License.
 *@
 
-@(jobDefId: String, graphType: String, results: java.util.Map[IdUrlPair, java.util.List[models.AppResult]], maxStages: Int,
+@(jobDefPair: IdUrlPair, graphType: String, results: java.util.Map[IdUrlPair, java.util.List[models.AppResult]], maxStages: Int,
         flowExecTimeList:java.util.List[Long])
 
 @import com.linkedin.drelephant.analysis.Severity
@@ -35,7 +35,7 @@
 }
 
 @if(results != null && results.nonEmpty) {
-  @tags.panel(){ Job History Results: <a href="@jobDefId" style="font-size:14px; color:#083d8d">@jobDefId</a>} {
+  @tags.panel(){ Job History Results: <a href="@jobDefPair.getUrl" style="font-size:14px; color:#083d8d">@jobDefPair.getId</a>} {
     @if(graphType.equals("resources")) {
       <script src="@routes.Assets.at("js/jobresourcesmetricshistoryform.js")" type="text/javascript"></script>
       <script src="@routes.Assets.at("js/graphresourcesmetricsutility.js")" type="text/javascript"></script>
